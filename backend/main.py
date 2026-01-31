@@ -14,11 +14,15 @@ app = FastAPI(title="Stock Predictor API (Linear + GARCH)")
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://stock-predictor-1-72h2.onrender.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # -----------------------------
 # Resolve company name → symbol

@@ -18,8 +18,8 @@ function StockPage() {
 
     try {
       const res = await fetch(
-        `http://localhost:8000/stock?company=${encodeURIComponent(company)}`
-      );
+  `https://stock-predictor-0zst.onrender.com/stock?company=${encodeURIComponent(company)}`
+);
 
       const json = await res.json();
 
