@@ -4,4 +4,4 @@ pandas
 numpy
 yfinance
 scikit-learn
-yahooquery
+arch
