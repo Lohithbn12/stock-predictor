@@ -1,7 +1,8 @@
+statsmodels
+arch
+scikit-learn
+yfinance
 fastapi
 uvicorn
 pandas
 numpy
-yfinance
-scikit-learn
-arch

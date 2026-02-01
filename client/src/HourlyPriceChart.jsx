@@ -47,24 +47,43 @@ function HourlyPriceChart({ prices }) {
 
   const options = {
     responsive: true,
+    maintainAspectRatio: false, // ✅ critical for mobile
     plugins: {
-      legend: { display: false }
+      legend: { display: false },
+      tooltip: {
+        mode: "index",
+        intersect: false
+      }
     },
     scales: {
       x: {
         type: "time",
         time: { unit: "day" },
-        ticks: { maxTicksLimit: 8 }
+        ticks: {
+          maxTicksLimit: 6,
+          autoSkip: true
+        },
+        grid: {
+          display: false
+        }
       },
       y: {
         ticks: {
-          callback: value => `₹${value}`
+          callback: value => `₹${value}`,
+          maxTicksLimit: 5
+        },
+        grid: {
+          color: "rgba(0,0,0,0.05)"
         }
       }
     }
   };
 
-  return <Line data={data} options={options} />;
+  return (
+    <div className="chart-container">
+      <Line data={data} options={options} />
+    </div>
+  );
 }
 
 export default HourlyPriceChart;

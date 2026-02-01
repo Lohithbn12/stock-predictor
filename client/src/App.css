@@ -99,3 +99,86 @@ h1 {
   font-size: 18px;
   color: #111;
 }
+
+/* =========================
+   MOBILE RESPONSIVE FIX
+   ========================= */
+@media (max-width: 768px) {
+
+  /* General page padding */
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  .container,
+  .stock-container,
+  .page-container {
+    padding: 10px;
+  }
+
+  /* Stack everything vertically */
+  .row,
+  .flex-row {
+    display: flex;
+    flex-direction: column !important;
+    gap: 12px;
+  }
+
+  /* Charts */
+  .chart-container {
+    width: 100% !important;
+    height: 280px !important;
+  }
+
+  canvas {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Tables */
+  .table-container {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  table {
+    min-width: 600px;
+    font-size: 12px;
+  }
+
+  th, td {
+    padding: 6px 8px;
+    white-space: nowrap;
+  }
+
+  /* Buttons & dropdowns */
+  button,
+  select {
+    width: 100%;
+    padding: 10px;
+    font-size: 14px;
+  }
+
+  /* Titles */
+  h1, h2, h3 {
+    font-size: 18px;
+    text-align: center;
+  }
+}
+
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 768px) {
+  table {
+    min-width: 600px;
+    font-size: 12px;
+  }
+
+  th, td {
+    white-space: nowrap;
+  }
+}

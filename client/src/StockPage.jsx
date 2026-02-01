@@ -46,6 +46,7 @@ function StockPage() {
           Smart stock prediction using Linear Regression & GARCH
         </p>
 
+        {/* SEARCH ROW */}
         <div className="search-row">
           <input
             type="text"
@@ -69,27 +70,28 @@ function StockPage() {
         {error && <p className="error">{error}</p>}
       </div>
 
-      {/* Result Card */}
+      {/* RESULT CARD */}
       {data && (
         <div className="card result-card">
           <h2>
             {data.company} ({data.symbol})
           </h2>
 
+          {/* STATS */}
           <div className="stats">
-            <div>
+            <div className="stat-box">
               <span>Last Close</span>
               <b>₹{data.last_close ?? "N/A"}</b>
             </div>
 
-            <div>
+            <div className="stat-box">
               <span>Linear Prediction</span>
               <b>
                 ₹{data.linear_regression_prediction?.expected_price ?? "N/A"}
               </b>
             </div>
 
-            <div>
+            <div className="stat-box">
               <span>GARCH Volatility</span>
               <b>
                 {data.garch_prediction?.volatility_30d_percent
@@ -99,12 +101,17 @@ function StockPage() {
             </div>
           </div>
 
-
+          {/* CHART */}
           <h3>Hourly Price Trend</h3>
-          <HourlyPriceChart prices={data.hourly_prices} />
+          <div className="chart-container">
+            <HourlyPriceChart prices={data.hourly_prices} />
+          </div>
 
+          {/* TABLE */}
           <h3>Last 4 Weeks</h3>
-          <Last4WeeksTable data={data.last_4_weeks} />
+          <div className="table-container">
+            <Last4WeeksTable data={data.last_4_weeks} />
+          </div>
         </div>
       )}
     </div>

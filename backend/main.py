@@ -4,8 +4,11 @@ from yfinance import Search
 import yfinance as yf
 import pandas as pd
 import numpy as np
+
 from sklearn.linear_model import LinearRegression
 from arch import arch_model
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.arima.model import ARIMA as ARMA_MODEL
 
 app = FastAPI(title="Stock Predictor API")
 
@@ -24,7 +27,7 @@ app.add_middleware(
 )
 
 # -----------------------------
-# Resolve company name → symbol
+# Resolve company → symbol
 # -----------------------------
 def resolve_symbol(company_name: str):
     search = Search(company_name)
@@ -39,13 +42,15 @@ def resolve_symbol(company_name: str):
 
     return results[0].get("symbol")
 
+
 # -----------------------------
 # API Endpoint
 # -----------------------------
 @app.get("/stock")
 def get_stock_data(
     company: str = Query(...),
-    days: int = Query(30, ge=1, le=365)
+    days: int = Query(30, ge=1, le=365),
+    model: str = Query("Linear")  # NEW
 ):
 
     symbol = resolve_symbol(company)
@@ -53,7 +58,7 @@ def get_stock_data(
         return {"error": "Stock not found"}
 
     # ==================================================
-    # 1️⃣ HOURLY DATA (CHART)
+    # 1️⃣ HOURLY DATA
     # ==================================================
     hourly_df = yf.download(
         symbol,
@@ -94,56 +99,98 @@ def get_stock_data(
 
     daily_df = daily_df.reset_index()
 
-    # Last 4 weeks
     last_4_weeks = (
         daily_df[["Date", "Open", "Close"]]
         .tail(20)
         .to_dict(orient="records")
     )
 
-    # ==================================================
-    # 3️⃣ LINEAR REGRESSION PREDICTION
-    # ==================================================
-    daily_df["DayIndex"] = np.arange(len(daily_df))
-
-    lr_model = LinearRegression()
-    lr_model.fit(daily_df[["DayIndex"]], daily_df["Close"])
-
-    future_days = pd.DataFrame({
-        "DayIndex": np.arange(len(daily_df), len(daily_df) + days)
-    })
-
-    lr_prediction = lr_model.predict(future_days)[-1].item()
+    last_close = round(daily_df["Close"].iloc[-1].item(), 2)
 
     # ==================================================
-    # 4️⃣ GARCH VOLATILITY
+    # 3️⃣ MODEL-SPECIFIC PREDICTION
     # ==================================================
-    returns = daily_df["Close"].pct_change().dropna() * 100
+    prediction_result = {}
 
-    garch = arch_model(returns, vol="Garch", p=1, q=1)
-    garch_fit = garch.fit(disp="off")
+    model = model.upper()
 
-    forecast = garch_fit.forecast(horizon=days)
-    volatility = np.sqrt(forecast.variance.values[-1]).mean()
+    # ---------- LINEAR REGRESSION ----------
+    if model == "LINEAR":
+        daily_df["DayIndex"] = np.arange(len(daily_df))
+
+        lr = LinearRegression()
+        lr.fit(daily_df[["DayIndex"]], daily_df["Close"])
+
+        future_index = pd.DataFrame({
+            "DayIndex": np.arange(len(daily_df), len(daily_df) + days)
+        })
+
+        predicted_price = lr.predict(future_index)[-1].item()
+
+        prediction_result = {
+            "model": "Linear Regression",
+            "expected_price": round(predicted_price, 2)
+        }
+
+    # ---------- ARCH / GARCH ----------
+    elif model == "ARCH":
+        returns = daily_df["Close"].pct_change().dropna() * 100
+
+        garch = arch_model(returns, vol="Garch", p=1, q=1)
+        garch_fit = garch.fit(disp="off")
+
+        forecast = garch_fit.forecast(horizon=days)
+        volatility = np.sqrt(forecast.variance.values[-1]).mean()
+
+        prediction_result = {
+            "model": "ARCH (GARCH)",
+            "volatility_percent": round(volatility, 2)
+        }
+
+    # ---------- ARMA ----------
+    elif model == "ARMA":
+        series = daily_df["Close"]
+
+        arma = ARMA_MODEL(series, order=(2, 1))
+        arma_fit = arma.fit()
+
+        forecast = arma_fit.forecast(steps=days)[0]
+        predicted_price = forecast[-1]
+
+        prediction_result = {
+            "model": "ARMA",
+            "expected_price": round(predicted_price, 2)
+        }
+
+    # ---------- ARIMA ----------
+    elif model == "ARIMA":
+        series = daily_df["Close"]
+
+        arima = ARIMA(series, order=(5, 1, 0))
+        arima_fit = arima.fit()
+
+        forecast = arima_fit.forecast(steps=days)
+        predicted_price = forecast.iloc[-1]
+
+        prediction_result = {
+            "model": "ARIMA",
+            "expected_price": round(predicted_price, 2)
+        }
+
+    else:
+        return {"error": "Invalid model selected"}
 
     # ==================================================
     # RESPONSE
     # ==================================================
     return {
-    "company": company,
-    "symbol": symbol,
-    "prediction_days": days,
-    "last_close": round(daily_df["Close"].iloc[-1].item(), 2),
+        "company": company,
+        "symbol": symbol,
+        "prediction_days": days,
+        "last_close": last_close,
 
-    "linear_regression_prediction": {
-        "expected_price": round(lr_prediction, 2)
-    },
+        "prediction": prediction_result,
 
-    "garch_prediction": {
-        "volatility_30d_percent": round(volatility, 2)
-    },
-
-    "hourly_prices": hourly_prices,
-    "last_4_weeks": last_4_weeks
-}
-
+        "hourly_prices": hourly_prices,
+        "last_4_weeks": last_4_weeks
+    }
