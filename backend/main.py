@@ -130,12 +130,20 @@ def get_stock_data(
     # RESPONSE
     # ==================================================
     return {
-        "company": company,
-        "symbol": symbol,
-        "prediction_days": days,
-        "last_close": round(daily_df["Close"].iloc[-1].item(), 2),
-        "linear_regression_prediction": round(lr_prediction, 2),
-        "garch_volatility_percent": round(volatility, 2),
-        "hourly_prices": hourly_prices,
-        "last_4_weeks": last_4_weeks
-    }
+    "company": company,
+    "symbol": symbol,
+    "prediction_days": days,
+    "last_close": round(daily_df["Close"].iloc[-1].item(), 2),
+
+    "linear_regression_prediction": {
+        "expected_price": round(lr_prediction, 2)
+    },
+
+    "garch_prediction": {
+        "volatility_30d_percent": round(volatility, 2)
+    },
+
+    "hourly_prices": hourly_prices,
+    "last_4_weeks": last_4_weeks
+}
+

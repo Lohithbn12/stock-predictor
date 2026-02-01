@@ -79,19 +79,26 @@ function StockPage() {
           <div className="stats">
             <div>
               <span>Last Close</span>
-              <b>₹{data.last_close}</b>
+              <b>₹{data.last_close ?? "N/A"}</b>
             </div>
 
             <div>
               <span>Linear Prediction</span>
-              <b>₹{data.linear_regression_prediction.expected_price}</b>
+              <b>
+                ₹{data.linear_regression_prediction?.expected_price ?? "N/A"}
+              </b>
             </div>
 
             <div>
               <span>GARCH Volatility</span>
-              <b>{data.garch_prediction.volatility_30d_percent}%</b>
+              <b>
+                {data.garch_prediction?.volatility_30d_percent
+                  ? `${data.garch_prediction.volatility_30d_percent}%`
+                  : "N/A"}
+              </b>
             </div>
           </div>
+
 
           <h3>Hourly Price Trend</h3>
           <HourlyPriceChart prices={data.hourly_prices} />
