@@ -8,7 +8,7 @@ const API_URL = "https://stock-predictor-0zst.onrender.com";
 function StockPage() {
   const [company, setCompany] = useState("");
   const [days, setDays] = useState(30);
-  const [model, setModel] = useState("Linear"); // ✅ NEW
+  const [model, setModel] = useState("Linear");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -42,7 +42,7 @@ function StockPage() {
       <div className="card">
         <h1>📈 Stock Predictor</h1>
         <p className="subtitle">
-          Select prediction model and forecast horizon
+          Price prediction using price + volume signals
         </p>
 
         <div className="search-row">
@@ -61,12 +61,13 @@ function StockPage() {
             <option value={365}>365 Days</option>
           </select>
 
-          {/* ✅ MODEL DROPDOWN */}
+          {/* MODEL DROPDOWN */}
           <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="Linear">Linear Regression</option>
-            <option value="ARCH">ARCH / GARCH</option>
-            <option value="ARMA">ARMA</option>
+            <option value="Linear">Linear Regression (Price + Volume)</option>
+            <option value="EWMA">EWMA (Volume-Weighted)</option>
             <option value="ARIMA">ARIMA</option>
+            <option value="ARMA">ARMA</option>
+            <option value="ARCH">ARCH / GARCH (Volatility)</option>
           </select>
 
           <button onClick={fetchStockData}>Search</button>
