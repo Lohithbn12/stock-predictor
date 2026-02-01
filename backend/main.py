@@ -45,7 +45,7 @@ def resolve_symbol(company_name: str):
 @app.get("/stock")
 def get_stock_data(
     company: str = Query(...),
-    days: int = Query(30, ge=1, le=90)
+    days: int = Query(30, ge=1, le=365)
 ):
 
     symbol = resolve_symbol(company)
