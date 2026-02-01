@@ -43,6 +43,9 @@ def resolve_symbol(company_name: str):
     return results[0].get("symbol")
 
 
+# -----------------------------
+# API Endpoint
+# -----------------------------
 @app.get("/stock")
 def get_stock_data(
     company: str = Query(...),
@@ -54,9 +57,33 @@ def get_stock_data(
     if not symbol:
         return {"error": "Stock not found"}
 
-    # ===============================
-    # DAILY DATA (PRICE + VOLUME)
-    # ===============================
+    # ==================================================
+    # 1️⃣ HOURLY DATA (FOR CHART)
+    # ==================================================
+    hourly_df = yf.download(
+        symbol,
+        period="120d",
+        interval="1h",
+        progress=False
+    )
+
+    if hourly_df.empty:
+        return {"error": "No hourly data found"}
+
+    if isinstance(hourly_df.columns, pd.MultiIndex):
+        hourly_df.columns = hourly_df.columns.get_level_values(0)
+
+    hourly_df = hourly_df.reset_index()
+
+    hourly_prices = (
+        hourly_df[["Datetime", "Close"]]
+        .tail(200)
+        .to_dict(orient="records")
+    )
+
+    # ==================================================
+    # 2️⃣ DAILY DATA (PRICE + VOLUME)
+    # ==================================================
     daily_df = yf.download(
         symbol,
         period="3y",
@@ -74,11 +101,20 @@ def get_stock_data(
 
     last_close = round(daily_df["Close"].iloc[-1], 2)
 
+    # -----------------------------
+    # LAST 4 WEEKS (TABLE)
+    # -----------------------------
+    last_4_weeks = (
+        daily_df[["Date", "Open", "Close"]]
+        .tail(20)
+        .to_dict(orient="records")
+    )
+
     model = model.upper()
     prediction_result = {}
 
     # ==================================================
-    # 1️⃣ LINEAR REGRESSION (PRICE + VOLUME)
+    # 3️⃣ LINEAR REGRESSION (PRICE + VOLUME)
     # ==================================================
     if model == "LINEAR":
         daily_df["DayIndex"] = np.arange(len(daily_df))
@@ -94,7 +130,7 @@ def get_stock_data(
 
         future_X = pd.DataFrame({
             "DayIndex": future_days,
-            "Volume": avg_volume  # volume influences future price
+            "Volume": avg_volume
         })
 
         predicted_price = lr.predict(future_X)[-1]
@@ -105,7 +141,7 @@ def get_stock_data(
         }
 
     # ==================================================
-    # 2️⃣ EWMA (VOLUME-WEIGHTED)
+    # 4️⃣ EWMA (VOLUME-WEIGHTED)
     # ==================================================
     elif model == "EWMA":
         price = daily_df["Close"]
@@ -123,7 +159,7 @@ def get_stock_data(
         }
 
     # ==================================================
-    # 3️⃣ ARIMA (PRICE ONLY – CORRECT)
+    # 5️⃣ ARIMA (PRICE ONLY)
     # ==================================================
     elif model == "ARIMA":
         series = daily_df["Close"]
@@ -140,7 +176,7 @@ def get_stock_data(
         }
 
     # ==================================================
-    # 4️⃣ ARMA (PRICE ONLY)
+    # 6️⃣ ARMA (PRICE ONLY)
     # ==================================================
     elif model == "ARMA":
         series = daily_df["Close"]
@@ -157,7 +193,7 @@ def get_stock_data(
         }
 
     # ==================================================
-    # 5️⃣ ARCH / GARCH (VOLATILITY MODEL)
+    # 7️⃣ ARCH / GARCH (VOLATILITY)
     # ==================================================
     elif model == "ARCH":
         returns = daily_df["Close"].pct_change().dropna() * 100
@@ -176,13 +212,17 @@ def get_stock_data(
     else:
         return {"error": "Invalid model selected"}
 
-    # ===============================
+    # ==================================================
     # RESPONSE
-    # ===============================
+    # ==================================================
     return {
         "company": company,
         "symbol": symbol,
         "prediction_days": days,
         "last_close": last_close,
-        "prediction": prediction_result
+        "prediction": prediction_result,
+
+        # 👇 REQUIRED FOR FRONTEND
+        "hourly_prices": hourly_prices,
+        "last_4_weeks": last_4_weeks
     }
