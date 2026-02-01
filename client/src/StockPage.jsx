@@ -13,6 +13,9 @@ function StockPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // ✅ NEW STATE (ONLY ADDITION)
+  const [showExplain, setShowExplain] = useState(false);
+
   const fetchStockData = async () => {
     if (!company || !days) return;
 
@@ -39,8 +42,17 @@ function StockPage() {
   return (
     <div className="page">
       {/* SEARCH CARD */}
-      <div className="card">
+      <div className="card" style={{ position: "relative" }}>
         <h1>📈 Stock Predictor</h1>
+
+        {/* ✅ NEW BUTTON */}
+        <button
+          className="explain-btn"
+          onClick={() => setShowExplain(true)}
+        >
+          Explain the predicted value
+        </button>
+
         <p className="subtitle">
           Price prediction using price + volume signals
         </p>
@@ -61,7 +73,6 @@ function StockPage() {
             <option value={365}>365 Days</option>
           </select>
 
-          {/* MODEL DROPDOWN */}
           <select value={model} onChange={(e) => setModel(e.target.value)}>
             <option value="Linear">Linear Regression (Price + Volume)</option>
             <option value="EWMA">EWMA (Volume-Weighted)</option>
@@ -84,7 +95,6 @@ function StockPage() {
             {data.company} ({data.symbol})
           </h2>
 
-          {/* STATS */}
           <div className="stats">
             <div className="stat-box">
               <span>Last Close</span>
@@ -103,16 +113,80 @@ function StockPage() {
             </div>
           </div>
 
-          {/* CHART */}
           <h3>Hourly Price Trend</h3>
           <div className="chart-container">
             <HourlyPriceChart prices={data.hourly_prices} />
           </div>
 
-          {/* TABLE */}
           <h3>Last 4 Weeks</h3>
           <div className="table-container">
             <Last4WeeksTable data={data.last_4_weeks} />
+          </div>
+        </div>
+      )}
+
+      {/* ✅ EXPLANATION MODAL (NEW) */}
+      {showExplain && data && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h2>How is the predicted value calculated?</h2>
+
+            <p>
+              <b>Selected Model:</b> {data.prediction.model}
+            </p>
+
+            {data.prediction.model.includes("Linear") && (
+              <>
+                <p>
+                  Linear Regression uses historical prices and trading volume.
+                </p>
+                <ul>
+                  <li>Time (day index) captures trend</li>
+                  <li>Volume strengthens price signals</li>
+                  <li>Model fits a best-fit line to estimate future price</li>
+                </ul>
+              </>
+            )}
+
+            {data.prediction.model.includes("EWMA") && (
+              <>
+                <p>
+                  EWMA gives more weight to recent prices.
+                </p>
+                <ul>
+                  <li>Recent data influences prediction more</li>
+                  <li>Volume-weighting improves momentum detection</li>
+                </ul>
+              </>
+            )}
+
+            {data.prediction.model === "ARIMA" && (
+              <p>
+                ARIMA predicts future prices using historical price patterns,
+                trends, and differencing.
+              </p>
+            )}
+
+            {data.prediction.model === "ARMA" && (
+              <p>
+                ARMA uses past prices and past prediction errors for short-term
+                forecasting.
+              </p>
+            )}
+
+            {data.prediction.model.includes("ARCH") && (
+              <p>
+                ARCH/GARCH models market volatility, not price direction.
+                Higher volatility means higher price fluctuation risk.
+              </p>
+            )}
+
+            <button
+              className="close-btn"
+              onClick={() => setShowExplain(false)}
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
