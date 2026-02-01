@@ -8,6 +8,7 @@ const API_URL = "https://stock-predictor-0zst.onrender.com";
 function StockPage() {
   const [company, setCompany] = useState("");
   const [days, setDays] = useState(30);
+  const [model, setModel] = useState("Linear"); // ✅ NEW
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -21,12 +22,10 @@ function StockPage() {
 
     try {
       const res = await fetch(
-        `${API_URL}/stock?company=${encodeURIComponent(company)}&days=${days}`
+        `${API_URL}/stock?company=${encodeURIComponent(company)}&days=${days}&model=${model}`
       );
 
-      if (!res.ok) {
-        throw new Error("Invalid request");
-      }
+      if (!res.ok) throw new Error("Invalid request");
 
       const json = await res.json();
       setData(json);
@@ -39,18 +38,17 @@ function StockPage() {
 
   return (
     <div className="page">
-      {/* Search Card */}
+      {/* SEARCH CARD */}
       <div className="card">
         <h1>📈 Stock Predictor</h1>
         <p className="subtitle">
-          Smart stock prediction using Linear Regression & GARCH
+          Select prediction model and forecast horizon
         </p>
 
-        {/* SEARCH ROW */}
         <div className="search-row">
           <input
             type="text"
-            placeholder="Enter stock name (e.g. Wipro)"
+            placeholder="Enter stock name (e.g. TCS)"
             value={company}
             onChange={(e) => setCompany(e.target.value)}
           />
@@ -61,6 +59,14 @@ function StockPage() {
             <option value={90}>90 Days</option>
             <option value={180}>180 Days</option>
             <option value={365}>365 Days</option>
+          </select>
+
+          {/* ✅ MODEL DROPDOWN */}
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="Linear">Linear Regression</option>
+            <option value="ARCH">ARCH / GARCH</option>
+            <option value="ARMA">ARMA</option>
+            <option value="ARIMA">ARIMA</option>
           </select>
 
           <button onClick={fetchStockData}>Search</button>
@@ -81,21 +87,16 @@ function StockPage() {
           <div className="stats">
             <div className="stat-box">
               <span>Last Close</span>
-              <b>₹{data.last_close ?? "N/A"}</b>
+              <b>₹{data.last_close}</b>
             </div>
 
             <div className="stat-box">
-              <span>Linear Prediction</span>
+              <span>{data.prediction.model}</span>
               <b>
-                ₹{data.linear_regression_prediction?.expected_price ?? "N/A"}
-              </b>
-            </div>
-
-            <div className="stat-box">
-              <span>GARCH Volatility</span>
-              <b>
-                {data.garch_prediction?.volatility_30d_percent
-                  ? `${data.garch_prediction.volatility_30d_percent}%`
+                {data.prediction.expected_price !== undefined
+                  ? `₹${data.prediction.expected_price}`
+                  : data.prediction.volatility_percent !== undefined
+                  ? `${data.prediction.volatility_percent}%`
                   : "N/A"}
               </b>
             </div>
