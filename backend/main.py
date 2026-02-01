@@ -7,10 +7,10 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from arch import arch_model
 
-app = FastAPI(title="Stock Predictor API (Linear + GARCH)")
+app = FastAPI(title="Stock Predictor API")
 
 # -----------------------------
-# CORS (for React - CRA)
+# CORS
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -22,7 +22,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # -----------------------------
 # Resolve company name → symbol
@@ -44,14 +43,17 @@ def resolve_symbol(company_name: str):
 # API Endpoint
 # -----------------------------
 @app.get("/stock")
-def get_stock_data(company: str = Query(...)):
+def get_stock_data(
+    company: str = Query(...),
+    days: int = Query(30, ge=1, le=90)
+):
 
     symbol = resolve_symbol(company)
     if not symbol:
         return {"error": "Stock not found"}
 
     # ==================================================
-    # 1️⃣ HOURLY DATA (FOR CHARTS)
+    # 1️⃣ HOURLY DATA (CHART)
     # ==================================================
     hourly_df = yf.download(
         symbol,
@@ -75,7 +77,7 @@ def get_stock_data(company: str = Query(...)):
     )
 
     # ==================================================
-    # 2️⃣ DAILY DATA (FOR MODELS)
+    # 2️⃣ DAILY DATA
     # ==================================================
     daily_df = yf.download(
         symbol,
@@ -92,79 +94,48 @@ def get_stock_data(company: str = Query(...)):
 
     daily_df = daily_df.reset_index()
 
-    # -----------------------------
-    # Last 4 weeks (Daily)
-    # -----------------------------
+    # Last 4 weeks
     last_4_weeks = (
         daily_df[["Date", "Open", "Close"]]
         .tail(20)
         .to_dict(orient="records")
     )
 
-    prices = daily_df["Close"]
-    last_price = prices.iloc[-1]
-
     # ==================================================
-    # 3️⃣ LINEAR REGRESSION (TREND)
+    # 3️⃣ LINEAR REGRESSION PREDICTION
     # ==================================================
     daily_df["DayIndex"] = np.arange(len(daily_df))
 
-    X = daily_df[["DayIndex"]]
-    y = prices
-
     lr_model = LinearRegression()
-    lr_model.fit(X, y)
+    lr_model.fit(daily_df[["DayIndex"]], daily_df["Close"])
 
     future_days = pd.DataFrame({
-        "DayIndex": np.arange(len(daily_df), len(daily_df) + 30)
+        "DayIndex": np.arange(len(daily_df), len(daily_df) + days)
     })
 
     lr_prediction = lr_model.predict(future_days)[-1].item()
 
     # ==================================================
-    # 4️⃣ GARCH MODEL (VOLATILITY)
+    # 4️⃣ GARCH VOLATILITY
     # ==================================================
-    log_returns = np.log(prices / prices.shift(1)).dropna() * 100
+    returns = daily_df["Close"].pct_change().dropna() * 100
 
-    garch = arch_model(
-        log_returns,
-        vol="Garch",
-        p=1,
-        q=1,
-        mean="Zero",
-        dist="normal"
-    )
-
+    garch = arch_model(returns, vol="Garch", p=1, q=1)
     garch_fit = garch.fit(disp="off")
 
-    forecast = garch_fit.forecast(horizon=30)
+    forecast = garch_fit.forecast(horizon=days)
     volatility = np.sqrt(forecast.variance.values[-1]).mean()
 
-    expected_move = last_price * (volatility / 100)
-
-    garch_lower = last_price - expected_move
-    garch_upper = last_price + expected_move
-
     # ==================================================
-    # 5️⃣ RESPONSE
+    # RESPONSE
     # ==================================================
     return {
         "company": company,
         "symbol": symbol,
-        "last_close": round(last_price, 2),
-
-        "linear_regression_prediction": {
-            "expected_price_1_month": round(lr_prediction, 2)
-        },
-
-        "garch_prediction": {
-            "volatility_30d_percent": round(volatility, 2),
-            "price_range": {
-                "lower": round(garch_lower, 2),
-                "upper": round(garch_upper, 2)
-            }
-        },
-
+        "prediction_days": days,
+        "last_close": round(daily_df["Close"].iloc[-1].item(), 2),
+        "linear_regression_prediction": round(lr_prediction, 2),
+        "garch_volatility_percent": round(volatility, 2),
         "hourly_prices": hourly_prices,
         "last_4_weeks": last_4_weeks
     }
