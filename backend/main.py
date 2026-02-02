@@ -59,28 +59,35 @@ def get_stock_data(
         return {"error": "Stock not found"}
 
     # ==================================================
-    # 1️⃣ HOURLY DATA (FOR CHART) – RANGE CONTROLLED
-    # ==================================================
+# 1️⃣ HOURLY DATA (FOR CHART) – RANGE CONTROLLED
+# ==================================================
+
+# ✅ SMART INTERVAL SWITCH
+    if range in ["1m", "3m"]:
+      interval = "1h"
+    else:
+      interval = "1d"   # for 6m, 1y
+
     hourly_df = yf.download(
-        symbol,
-        period=range,        # ✅ ONLY CHANGE HERE
-        interval="1h",
-        progress=False
-    )
+    symbol,
+    period=range,
+    interval=interval,
+    progress=False
+)
 
     if hourly_df.empty:
-        return {"error": "No hourly data found"}
+      return {"error": "No chart data found"}
 
     if isinstance(hourly_df.columns, pd.MultiIndex):
-        hourly_df.columns = hourly_df.columns.get_level_values(0)
+       hourly_df.columns = hourly_df.columns.get_level_values(0)
 
     hourly_df = hourly_df.reset_index()
 
+# ❌ REMOVE .tail(200)
     hourly_prices = (
-        hourly_df[["Datetime", "Close"]]
-        .tail(200)
-        .to_dict(orient="records")
-    )
+    hourly_df[["Datetime" if interval=="1h" else "Date", "Close"]]
+    .to_dict(orient="records")
+)
 
     # ==================================================
     # 2️⃣ DAILY DATA (PRICE + VOLUME)
