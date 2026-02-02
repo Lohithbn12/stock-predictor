@@ -250,6 +250,125 @@ def get_stock_data(
 
     else:
         return {"error": "Invalid model selected"}
+    
+
+    # ==================================================
+# STEP 3 – MARKET STYLE CONFIDENCE ENGINE
+# ==================================================
+
+    all_models = []
+
+# -------- HELPER METRICS --------
+    price_std = daily_df["Close"].pct_change().std()
+    vol_std = daily_df["Volume"].pct_change().std()
+
+    trend = daily_df["Close"].iloc[-1] - daily_df["Close"].iloc[-10]
+
+# ==================================================
+# LINEAR CONFIDENCE
+# ==================================================
+    if "expected_price" in prediction_result and model == "LINEAR":
+      try:
+        r2 = lr.score(X, y)
+
+        score = 0
+
+        # Model fit
+        if r2 > 0.55:
+            score += 2
+        elif r2 > 0.35:
+            score += 1
+
+        # Trend strength
+        if abs(trend) > price_std * 5:
+            score += 1
+
+        # Volume confirmation
+        if vol_std < 0.8:
+            score += 1
+
+        confidence = (
+            "High" if score >= 3
+            else "Medium" if score == 2
+            else "Low"
+        )
+
+      except:
+        confidence = "Medium"
+
+      all_models.append({
+        "name": "Linear",
+        "price": prediction_result.get("expected_price"),
+        "confidence": confidence,
+        "reason": "Trend + volume based reliability"
+    })
+
+
+# ==================================================
+# EWMA CONFIDENCE
+# ==================================================
+    if model == "EWMA":
+
+     momentum = daily_df["Close"].pct_change().tail(5).mean()
+
+     confidence = (
+        "High" if abs(momentum) > 0.01 and vol_std < 0.9
+        else "Medium" if abs(momentum) > 0.005
+        else "Low"
+    )
+
+     all_models.append({
+        "name": "EWMA",
+        "price": prediction_result.get("expected_price"),
+        "confidence": confidence,
+        "reason": "Recent momentum strength"
+    })
+
+
+# ==================================================
+# ARIMA / ARMA CONFIDENCE
+# ==================================================
+    if model in ["ARIMA", "ARMA"]:
+
+     error = daily_df["Close"].pct_change().std()
+
+     confidence = (
+        "High" if error < 0.015
+        else "Medium" if error < 0.03
+        else "Low"
+    )
+
+     all_models.append({
+        "name": model,
+        "price": prediction_result.get("expected_price"),
+        "confidence": confidence,
+        "reason": "Forecast stability"
+    })
+
+
+# ==================================================
+# ARCH – RISK BASED
+# ==================================================
+    if model == "ARCH":
+
+     vol = prediction_result.get("volatility_percent", 0)
+
+     confidence = (
+        "Safe" if vol < 2
+        else "Risky" if vol < 4
+        else "Very Risky"
+    )
+
+     all_models.append({
+        "name": "ARCH",
+        "volatility": vol,
+        "confidence": confidence,
+        "reason": "Market risk level"
+    })
+
+
+    prediction_result["comparison"] = all_models
+
 
     return {
         "company": company,

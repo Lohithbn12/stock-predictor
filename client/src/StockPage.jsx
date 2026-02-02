@@ -153,6 +153,41 @@ function StockPage() {
             </div>
           </div>
 
+          {/* ✅ NEW COMPARISON SECTION */}
+          {data.prediction.comparison && (
+            <div style={{ marginTop: "12px" }}>
+              <h3>Model Comparison</h3>
+
+              {data.prediction.comparison.map((m, i) => (
+                <div
+                  key={i}
+                  style={{
+                    border: "1px solid #ddd",
+                    padding: "8px",
+                    marginBottom: "6px",
+                    borderRadius: "8px"
+                  }}
+                >
+                  <b>{m.name}</b>
+
+                  {m.price && (
+                    <div>Price: ₹{m.price}</div>
+                  )}
+
+                  {m.volatility && (
+                    <div>Volatility: {m.volatility}%</div>
+                  )}
+
+                  <div>
+                    Confidence: <b>{m.confidence}</b>
+                  </div>
+
+                  <small>{m.reason}</small>
+                </div>
+              ))}
+            </div>
+          )}
+
           <h3>Hourly Price Trend</h3>
           <div className="chart-container">
             <HourlyPriceChart prices={data.hourly_prices} />
