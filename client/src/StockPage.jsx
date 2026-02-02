@@ -9,6 +9,7 @@ function StockPage() {
   const [company, setCompany] = useState("");
   const [days, setDays] = useState(30);
   const [model, setModel] = useState("Linear");
+  const [chartRange, setChartRange] = useState("120d"); // ✅ NEW
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -25,7 +26,7 @@ function StockPage() {
 
     try {
       const res = await fetch(
-        `${API_URL}/stock?company=${encodeURIComponent(company)}&days=${days}&model=${model}`
+        `${API_URL}/stock?company=${encodeURIComponent(company)}&days=${days}&model=${model}&range=${chartRange}`
       );
 
       if (!res.ok) throw new Error("Invalid request");
@@ -66,6 +67,7 @@ function StockPage() {
           />
 
           <select value={days} onChange={(e) => setDays(e.target.value)}>
+            <option value={1}>1 Days</option>
             <option value={7}>7 Days</option>
             <option value={30}>30 Days</option>
             <option value={90}>90 Days</option>
@@ -91,6 +93,35 @@ function StockPage() {
       {/* RESULT CARD */}
       {data && (
         <div className="card result-card">
+
+          
+          {/* ================= ONLY ADDITION START ================= */}
+
+          <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+            {[
+              { label: "1M", value: "30d" },
+              { label: "3M", value: "90d" },
+              { label: "6M", value: "180d" },
+              { label: "1Y", value: "365d" }
+            ].map(r => (
+              <button
+                key={r.value}
+                onClick={() => setChartRange(r.value)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  border: "1px solid #2563eb",
+                  background: chartRange === r.value ? "#2563eb" : "white",
+                  color: chartRange === r.value ? "white" : "#2563eb",
+                  cursor: "pointer",
+                  fontSize: "12px"
+                }}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+
           <h2>
             {data.company} ({data.symbol})
           </h2>

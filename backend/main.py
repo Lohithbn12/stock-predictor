@@ -50,7 +50,8 @@ def resolve_symbol(company_name: str):
 def get_stock_data(
     company: str = Query(...),
     days: int = Query(30, ge=1, le=365),
-    model: str = Query("Linear")
+    model: str = Query("Linear"),
+    range: str = Query("120d")   # ✅ NEW (SAFE ADDITION)
 ):
 
     symbol = resolve_symbol(company)
@@ -58,11 +59,11 @@ def get_stock_data(
         return {"error": "Stock not found"}
 
     # ==================================================
-    # 1️⃣ HOURLY DATA (FOR CHART)
+    # 1️⃣ HOURLY DATA (FOR CHART) – RANGE CONTROLLED
     # ==================================================
     hourly_df = yf.download(
         symbol,
-        period="120d",
+        period=range,        # ✅ ONLY CHANGE HERE
         interval="1h",
         progress=False
     )
@@ -101,9 +102,6 @@ def get_stock_data(
 
     last_close = round(daily_df["Close"].iloc[-1], 2)
 
-    # -----------------------------
-    # LAST 4 WEEKS (TABLE)
-    # -----------------------------
     last_4_weeks = (
         daily_df[["Date", "Open", "Close"]]
         .tail(20)
@@ -113,12 +111,9 @@ def get_stock_data(
     model = model.upper()
     prediction_result = {}
 
-    # ==================================================
-    # 3️⃣ LINEAR REGRESSION (PRICE + VOLUME)
-    # ==================================================
+    # ================= LINEAR REGRESSION =================
     if model == "LINEAR":
         daily_df["DayIndex"] = np.arange(len(daily_df))
-
         X = daily_df[["DayIndex", "Volume"]]
         y = daily_df["Close"]
 
@@ -140,69 +135,46 @@ def get_stock_data(
             "expected_price": round(predicted_price, 2)
         }
 
-    # ==================================================
-    # 4️⃣ EWMA (VOLUME-WEIGHTED)
-    # ==================================================
+    # ================= EWMA =================
     elif model == "EWMA":
-        price = daily_df["Close"]
-        volume = daily_df["Volume"]
+        vol_weight = daily_df["Volume"] / daily_df["Volume"].mean()
+        weighted_price = daily_df["Close"] * vol_weight
 
-        vol_weight = volume / volume.mean()
-        weighted_price = price * vol_weight
-
-        ewma_price = weighted_price.ewm(span=20, adjust=False).mean()
-        predicted_price = ewma_price.iloc[-1]
+        ewma_price = weighted_price.ewm(span=20, adjust=False).mean().iloc[-1]
 
         prediction_result = {
             "model": "EWMA (Volume-Weighted)",
-            "expected_price": round(predicted_price, 2)
+            "expected_price": round(ewma_price, 2)
         }
 
-    # ==================================================
-    # 5️⃣ ARIMA (PRICE ONLY)
-    # ==================================================
+    # ================= ARIMA =================
     elif model == "ARIMA":
-        series = daily_df["Close"]
-
-        arima = ARIMA(series, order=(5, 1, 0))
-        arima_fit = arima.fit()
-
-        forecast = arima_fit.forecast(steps=days)
-        predicted_price = forecast.iloc[-1]
+        arima = ARIMA(daily_df["Close"], order=(5, 1, 0))
+        forecast = arima.fit().forecast(steps=days)
 
         prediction_result = {
             "model": "ARIMA",
-            "expected_price": round(predicted_price, 2)
+            "expected_price": round(forecast.iloc[-1], 2)
         }
 
-    # ==================================================
-    # 6️⃣ ARMA (PRICE ONLY)
-    # ==================================================
+    # ================= ARMA =================
     elif model == "ARMA":
-        series = daily_df["Close"]
-
-        arma = ARMA_MODEL(series, order=(2, 1))
-        arma_fit = arma.fit()
-
-        forecast = arma_fit.forecast(steps=days)[0]
-        predicted_price = forecast[-1]
+        arma = ARMA_MODEL(daily_df["Close"], order=(2, 1))
+        forecast = arma.fit().forecast(steps=days)[0]
 
         prediction_result = {
             "model": "ARMA",
-            "expected_price": round(predicted_price, 2)
+            "expected_price": round(forecast[-1], 2)
         }
 
-    # ==================================================
-    # 7️⃣ ARCH / GARCH (VOLATILITY)
-    # ==================================================
+    # ================= ARCH =================
     elif model == "ARCH":
         returns = daily_df["Close"].pct_change().dropna() * 100
-
         garch = arch_model(returns, vol="Garch", p=1, q=1)
-        garch_fit = garch.fit(disp="off")
 
-        forecast = garch_fit.forecast(horizon=days)
-        volatility = np.sqrt(forecast.variance.values[-1]).mean()
+        volatility = np.sqrt(
+            garch.fit(disp="off").forecast(horizon=days).variance.values[-1]
+        ).mean()
 
         prediction_result = {
             "model": "ARCH (Volatility)",
@@ -212,17 +184,12 @@ def get_stock_data(
     else:
         return {"error": "Invalid model selected"}
 
-    # ==================================================
-    # RESPONSE
-    # ==================================================
     return {
         "company": company,
         "symbol": symbol,
         "prediction_days": days,
         "last_close": last_close,
         "prediction": prediction_result,
-
-        # 👇 REQUIRED FOR FRONTEND
         "hourly_prices": hourly_prices,
         "last_4_weeks": last_4_weeks
     }
