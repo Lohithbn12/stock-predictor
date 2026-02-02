@@ -51,7 +51,7 @@ def get_stock_data(
     company: str = Query(...),
     days: int = Query(30, ge=1, le=365),
     model: str = Query("Linear"),
-    range: str = Query("120d")   # ✅ NEW (SAFE ADDITION)
+    range: str = Query("120d")
 ):
 
     symbol = resolve_symbol(company)
@@ -59,35 +59,36 @@ def get_stock_data(
         return {"error": "Stock not found"}
 
     # ==================================================
-# 1️⃣ HOURLY DATA (FOR CHART) – RANGE CONTROLLED
-# ==================================================
-
-# ✅ SMART INTERVAL SWITCH
+    # 1️⃣ CHART DATA – SMART INTERVAL SWITCH
+    # ==================================================
     if range in ["1m", "3m"]:
-      interval = "1h"
+        interval = "1h"
+        date_col = "Datetime"
     else:
-      interval = "1d"   # for 6m, 1y
+        interval = "1d"
+        date_col = "Date"
 
-    hourly_df = yf.download(
-    symbol,
-    period=range,
-    interval=interval,
-    progress=False
-)
+    chart_df = yf.download(
+        symbol,
+        period=range,
+        interval=interval,
+        progress=False
+    )
 
-    if hourly_df.empty:
-      return {"error": "No chart data found"}
+    if chart_df.empty:
+        return {"error": "No chart data found"}
 
-    if isinstance(hourly_df.columns, pd.MultiIndex):
-       hourly_df.columns = hourly_df.columns.get_level_values(0)
+    if isinstance(chart_df.columns, pd.MultiIndex):
+        chart_df.columns = chart_df.columns.get_level_values(0)
 
-    hourly_df = hourly_df.reset_index()
+    chart_df = chart_df.reset_index()
 
-# ❌ REMOVE .tail(200)
+    # ✅ SAFE KEY HANDLING FOR FRONTEND
     hourly_prices = (
-    hourly_df[["Datetime" if interval=="1h" else "Date", "Close"]]
-    .to_dict(orient="records")
-)
+        chart_df[[date_col, "Close"]]
+        .rename(columns={date_col: "Datetime"})
+        .to_dict(orient="records")
+    )
 
     # ==================================================
     # 2️⃣ DAILY DATA (PRICE + VOLUME)
@@ -107,7 +108,7 @@ def get_stock_data(
 
     daily_df = daily_df.reset_index()
 
-    last_close = round(daily_df["Close"].iloc[-1], 2)
+    last_close = round(float(daily_df["Close"].iloc[-1]), 2)
 
     last_4_weeks = (
         daily_df[["Date", "Open", "Close"]]
@@ -118,31 +119,39 @@ def get_stock_data(
     model = model.upper()
     prediction_result = {}
 
-    # ================= LINEAR REGRESSION =================
+    # ==================================================
+    # 3️⃣ LINEAR REGRESSION (PRICE + VOLUME) – FIXED
+    # ==================================================
     if model == "LINEAR":
+        daily_df = daily_df.dropna(subset=["Close", "Volume"]).copy()
+
         daily_df["DayIndex"] = np.arange(len(daily_df))
-        X = daily_df[["DayIndex", "Volume"]]
-        y = daily_df["Close"]
+
+        X = daily_df[["DayIndex", "Volume"]].astype(float)
+        y = daily_df["Close"].astype(float)
 
         lr = LinearRegression()
         lr.fit(X, y)
 
         future_days = np.arange(len(daily_df), len(daily_df) + days)
-        avg_volume = daily_df["Volume"].tail(30).mean()
+
+        avg_volume = float(daily_df["Volume"].tail(30).mean())
 
         future_X = pd.DataFrame({
             "DayIndex": future_days,
             "Volume": avg_volume
         })
 
-        predicted_price = lr.predict(future_X)[-1]
+        predicted_price = float(lr.predict(future_X)[-1])
 
         prediction_result = {
             "model": "Linear Regression (Price + Volume)",
             "expected_price": round(predicted_price, 2)
         }
 
-    # ================= EWMA =================
+    # ==================================================
+    # 4️⃣ EWMA
+    # ==================================================
     elif model == "EWMA":
         vol_weight = daily_df["Volume"] / daily_df["Volume"].mean()
         weighted_price = daily_df["Close"] * vol_weight
@@ -151,30 +160,36 @@ def get_stock_data(
 
         prediction_result = {
             "model": "EWMA (Volume-Weighted)",
-            "expected_price": round(ewma_price, 2)
+            "expected_price": round(float(ewma_price), 2)
         }
 
-    # ================= ARIMA =================
+    # ==================================================
+    # 5️⃣ ARIMA
+    # ==================================================
     elif model == "ARIMA":
         arima = ARIMA(daily_df["Close"], order=(5, 1, 0))
         forecast = arima.fit().forecast(steps=days)
 
         prediction_result = {
             "model": "ARIMA",
-            "expected_price": round(forecast.iloc[-1], 2)
+            "expected_price": round(float(forecast.iloc[-1]), 2)
         }
 
-    # ================= ARMA =================
+    # ==================================================
+    # 6️⃣ ARMA
+    # ==================================================
     elif model == "ARMA":
         arma = ARMA_MODEL(daily_df["Close"], order=(2, 1))
         forecast = arma.fit().forecast(steps=days)[0]
 
         prediction_result = {
             "model": "ARMA",
-            "expected_price": round(forecast[-1], 2)
+            "expected_price": round(float(forecast[-1]), 2)
         }
 
-    # ================= ARCH =================
+    # ==================================================
+    # 7️⃣ ARCH
+    # ==================================================
     elif model == "ARCH":
         returns = daily_df["Close"].pct_change().dropna() * 100
         garch = arch_model(returns, vol="Garch", p=1, q=1)
@@ -185,7 +200,7 @@ def get_stock_data(
 
         prediction_result = {
             "model": "ARCH (Volatility)",
-            "volatility_percent": round(volatility, 2)
+            "volatility_percent": round(float(volatility), 2)
         }
 
     else:
@@ -197,6 +212,8 @@ def get_stock_data(
         "prediction_days": days,
         "last_close": last_close,
         "prediction": prediction_result,
+
+        # ✅ FRONTEND CRITICAL
         "hourly_prices": hourly_prices,
         "last_4_weeks": last_4_weeks
     }
