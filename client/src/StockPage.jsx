@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import HourlyPriceChart from "./HourlyPriceChart";
 import Last4WeeksTable from "./Last4WeeksTable";
 import "./App.css";
