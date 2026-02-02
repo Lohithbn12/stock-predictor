@@ -168,67 +168,126 @@ function StockPage() {
       {/* ✅ EXPLANATION MODAL (NEW) */}
       {showExplain && data && (
         <div className="modal-overlay">
-          <div className="modal">
-            <h2>How is the predicted value calculated?</h2>
+  <div className="modal">
+    <h2>How is the predicted value calculated?</h2>
 
-            <p>
-              <b>Selected Model:</b> {data.prediction.model}
-            </p>
+    <p>
+      <b>Selected Model:</b> {data.prediction.model}
+    </p>
 
-            {data.prediction.model.includes("Linear") && (
-              <>
-                <p>
-                  Linear Regression uses historical prices and trading volume.
-                </p>
-                <ul>
-                  <li>Time (day index) captures trend</li>
-                  <li>Volume strengthens price signals</li>
-                  <li>Model fits a best-fit line to estimate future price</li>
-                </ul>
-              </>
-            )}
+    {/* ===== BACKEND EXPLANATION (PRIMARY) ===== */}
+    {data.prediction.explanation && (
+      <div style={{ marginBottom: "12px" }}>
 
-            {data.prediction.model.includes("EWMA") && (
-              <>
-                <p>
-                  EWMA gives more weight to recent prices.
-                </p>
-                <ul>
-                  <li>Recent data influences prediction more</li>
-                  <li>Volume-weighting improves momentum detection</li>
-                </ul>
-              </>
-            )}
+        {data.prediction.explanation.method && (
+          <p>
+            <b>Method:</b> {data.prediction.explanation.method}
+          </p>
+        )}
 
-            {data.prediction.model === "ARIMA" && (
-              <p>
-                ARIMA predicts future prices using historical price patterns,
-                trends, and differencing.
-              </p>
-            )}
+        {data.prediction.explanation.concept && (
+          <p>
+            <b>Concept:</b> {data.prediction.explanation.concept}
+          </p>
+        )}
 
-            {data.prediction.model === "ARMA" && (
-              <p>
-                ARMA uses past prices and past prediction errors for short-term
-                forecasting.
-              </p>
-            )}
+        {data.prediction.explanation.inputs_used && (
+          <>
+            <b>Inputs Used:</b>
+            <ul>
+              {data.prediction.explanation.inputs_used.map((i, idx) => (
+                <li key={idx}>{i}</li>
+              ))}
+            </ul>
+          </>
+        )}
 
-            {data.prediction.model.includes("ARCH") && (
-              <p>
-                ARCH/GARCH models market volatility, not price direction.
-                Higher volatility means higher price fluctuation risk.
-              </p>
-            )}
+        {data.prediction.explanation.coefficients && (
+          <>
+            <b>Model Weights:</b>
+            <ul>
+              <li>
+                Trend impact: {data.prediction.explanation.coefficients.trend_weight}
+              </li>
+              <li>
+                Volume impact: {data.prediction.explanation.coefficients.volume_weight}
+              </li>
+            </ul>
+          </>
+        )}
 
-            <button
-              className="close-btn"
-              onClick={() => setShowExplain(false)}
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        {data.prediction.explanation.interpretation && (
+          <p>
+            <b>Interpretation:</b> {data.prediction.explanation.interpretation}
+          </p>
+        )}
+
+        {data.prediction.explanation.meaning && (
+          <p>
+            <b>Meaning:</b> {data.prediction.explanation.meaning}
+          </p>
+        )}
+
+      </div>
+    )}
+
+    {/* ===== FALLBACK TEXTS (YOUR ORIGINAL LOGIC KEPT) ===== */}
+
+    {data.prediction.model.includes("Linear") && !data.prediction.explanation && (
+      <>
+        <p>
+          Linear Regression uses historical prices and trading volume.
+        </p>
+        <ul>
+          <li>Time (day index) captures trend</li>
+          <li>Volume strengthens price signals</li>
+          <li>Model fits a best-fit line to estimate future price</li>
+        </ul>
+      </>
+    )}
+
+    {data.prediction.model.includes("EWMA") && !data.prediction.explanation && (
+      <>
+        <p>
+          EWMA gives more weight to recent prices.
+        </p>
+        <ul>
+          <li>Recent data influences prediction more</li>
+          <li>Volume-weighting improves momentum detection</li>
+        </ul>
+      </>
+    )}
+
+    {data.prediction.model === "ARIMA" && !data.prediction.explanation && (
+      <p>
+        ARIMA predicts future prices using historical price patterns,
+        trends, and differencing.
+      </p>
+    )}
+
+    {data.prediction.model === "ARMA" && !data.prediction.explanation && (
+      <p>
+        ARMA uses past prices and past prediction errors for short-term
+        forecasting.
+      </p>
+    )}
+
+    {data.prediction.model.includes("ARCH") && !data.prediction.explanation && (
+      <p>
+        ARCH/GARCH models market volatility, not price direction.
+        Higher volatility means higher price fluctuation risk.
+      </p>
+    )}
+
+    <button
+      className="close-btn"
+      onClick={() => setShowExplain(false)}
+    >
+      Close
+    </button>
+  </div>
+</div>
+
       )}
     </div>
   );

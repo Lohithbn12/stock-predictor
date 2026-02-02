@@ -128,7 +128,8 @@ h1 {
   /* Charts */
   .chart-container {
     width: 100% !important;
-    height: 280px !important;
+    height: 420px !important;
+    min-height: 380px !important;
   }
 
   canvas {

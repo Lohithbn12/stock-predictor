@@ -145,9 +145,23 @@ def get_stock_data(
         predicted_price = float(lr.predict(future_X)[-1])
 
         prediction_result = {
-            "model": "Linear Regression (Price + Volume)",
-            "expected_price": round(predicted_price, 2)
-        }
+    "model": "Linear Regression (Price + Volume)",
+    "expected_price": round(predicted_price, 2),
+
+    "explanation": {
+        "method": "Linear regression using time trend + trading volume",
+        "inputs_used": ["DayIndex (trend)", "Volume"],
+        "avg_volume_used": round(avg_volume, 2),
+        "coefficients": {
+            "trend_weight": float(lr.coef_[0]),
+            "volume_weight": float(lr.coef_[1])
+        },
+        "interpretation":
+            "Price is estimated using a best-fit line where both "
+            "time progression and trading volume influence the future price."
+    }
+}
+
 
     # ==================================================
     # 4️⃣ EWMA
@@ -159,9 +173,16 @@ def get_stock_data(
         ewma_price = weighted_price.ewm(span=20, adjust=False).mean().iloc[-1]
 
         prediction_result = {
-            "model": "EWMA (Volume-Weighted)",
-            "expected_price": round(float(ewma_price), 2)
-        }
+    "model": "EWMA (Volume-Weighted)",
+    "expected_price": round(ewma_price, 2),
+
+    "explanation": {
+        "method": "Exponentially weighted moving average adjusted by volume",
+        "concept":
+            "Recent prices get higher weight; volume amplifies strong moves.",
+        "span": 20
+    }
+}
 
     # ==================================================
     # 5️⃣ ARIMA
@@ -171,9 +192,17 @@ def get_stock_data(
         forecast = arima.fit().forecast(steps=days)
 
         prediction_result = {
-            "model": "ARIMA",
-            "expected_price": round(float(forecast.iloc[-1]), 2)
-        }
+    "model": "ARIMA",
+    "expected_price": round(forecast.iloc[-1], 2),
+
+    "explanation": {
+        "method": "ARIMA time-series forecasting",
+        "order": "(5,1,0)",
+        "concept":
+            "Model predicts using past 5 days patterns after removing trend."
+    }
+}
+
 
     # ==================================================
     # 6️⃣ ARMA
@@ -183,9 +212,17 @@ def get_stock_data(
         forecast = arma.fit().forecast(steps=days)[0]
 
         prediction_result = {
-            "model": "ARMA",
-            "expected_price": round(float(forecast[-1]), 2)
-        }
+    "model": "ARMA",
+    "expected_price": round(forecast[-1], 2),
+
+    "explanation": {
+        "method": "ARMA short-term model",
+        "order": "(2,1)",
+        "concept":
+            "Uses past prices + past errors to estimate near future."
+    }
+}
+
 
     # ==================================================
     # 7️⃣ ARCH
@@ -199,9 +236,17 @@ def get_stock_data(
         ).mean()
 
         prediction_result = {
-            "model": "ARCH (Volatility)",
-            "volatility_percent": round(float(volatility), 2)
-        }
+    "model": "ARCH (Volatility)",
+    "volatility_percent": round(volatility, 2),
+
+    "explanation": {
+        "method": "GARCH volatility estimation",
+        "meaning":
+            "Measures expected fluctuation range, not direction.",
+        "interpretation":
+            "Higher % = higher risk and price swings."
+    }
+}
 
     else:
         return {"error": "Invalid model selected"}
