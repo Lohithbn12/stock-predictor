@@ -40,6 +40,15 @@ function StockPage() {
     setLoading(false);
   };
 
+
+   // ================== ONLY REAL FIX ==================
+  useEffect(() => {
+    if (company) {
+      fetchStockData();
+    }
+  }, [chartRange]);
+  // ===================================================
+
   return (
     <div className="page">
       {/* SEARCH CARD */}
