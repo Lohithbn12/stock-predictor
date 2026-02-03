@@ -46,25 +46,36 @@ function StockPage() {
   };
 
  // ============= OVERLAY FUNCTION (NEW) =================
-  const fetchOverlay = async () => {
-    try {
-      const res = await fetch(
-        `${API_URL}/stock?company=${encodeURIComponent(company)}&days=${days}&model=${model}&range=90d`
-      );
+  const fetchOverlay = () => {
 
-      const json = await res.json();
+  if (!data?.hourly_prices) return;
 
-      const combined = [
-        ...(json.hourly_prices || []),
-        ...(json.predicted_prices || [])
-      ];
+  const lastPoint =
+    data.hourly_prices[data.hourly_prices.length - 1];
 
-      setOverlayData(combined);
-      setShowOverlay(true);
-    } catch (e) {
-      console.log("overlay error", e);
-    }
-  };
+  const future = [];
+
+  for (let i = 1; i <= days; i++) {
+    future.push({
+      Datetime: new Date(
+        new Date(lastPoint.Datetime).getTime() +
+        i * 24 * 60 * 60 * 1000
+      ),
+      Close: data.prediction.expected_price
+    });
+  }
+
+  const combined = [
+    ...data.hourly_prices,
+    ...future
+  ];
+
+  setOverlayData(combined);
+  setShowOverlay(true);
+};
+
+console.log("overlayData", overlayData);
+
   // ======================================================
    // ================== ONLY REAL FIX ==================
   useEffect(() => {
