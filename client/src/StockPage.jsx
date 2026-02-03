@@ -61,7 +61,8 @@ function StockPage() {
         new Date(lastPoint.Datetime).getTime() +
         i * 24 * 60 * 60 * 1000
       ),
-      Close: data.prediction.expected_price
+      Close: data.prediction.expected_price || data.prediction.price
+
     });
   }
 
@@ -74,7 +75,10 @@ function StockPage() {
   setShowOverlay(true);
 };
 
-console.log("overlayData", overlayData);
+useEffect(() => {
+  console.log("overlayData", overlayData);
+}, [overlayData]);
+
 
   // ======================================================
    // ================== ONLY REAL FIX ==================
@@ -130,15 +134,13 @@ console.log("overlayData", overlayData);
 
           <button onClick={fetchStockData}>Search</button>
           {/* ============= NEW BUTTON ============== */}
-          {data && (
-            <button onClick={() => {
+          <button onClick={() => {
+  if (!data) return;
   if (showOverlay) setShowOverlay(false);
   else fetchOverlay();
 }}>
   {showOverlay ? "Hide Overlay" : "Show Prediction Overlay"}
 </button>
-
-          )}
           {/* ======================================= */}
         </div>
 
