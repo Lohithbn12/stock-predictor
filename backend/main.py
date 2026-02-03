@@ -119,6 +119,13 @@ def get_stock_data(
     model = model.upper()
     prediction_result = {}
 
+    # ---- DATA SAFETY ----
+    if daily_df["Volume"].isna().sum() > 0:
+     daily_df["Volume"] = daily_df["Volume"].fillna(
+        daily_df["Volume"].median()
+    )
+
+
     # ==================================================
     # 3️⃣ LINEAR REGRESSION (PRICE + VOLUME) – FIXED
     # ==================================================
@@ -188,40 +195,72 @@ def get_stock_data(
     # 5️⃣ ARIMA
     # ==================================================
     elif model == "ARIMA":
-        arima = ARIMA(daily_df["Close"], order=(5, 1, 0))
-        forecast = arima.fit().forecast(steps=days)
+     try:
+        series = daily_df["Close"]
+
+        if len(series) < 100:
+            raise Exception("Need 100+ days for ARIMA")
+
+        arima = ARIMA(series, order=(3,1,2))
+        fit = arima.fit()
+
+        forecast = fit.forecast(steps=days)
 
         prediction_result = {
-    "model": "ARIMA",
-    "expected_price": round(forecast.iloc[-1], 2),
+            "model": "ARIMA",
+            "expected_price": round(float(forecast.iloc[-1]), 2),
+            "explanation": {
+                "method": "ARIMA with safer order (3,1,2)",
+                "concept": "Auto differenced price series"
+            }
+        }
 
-    "explanation": {
-        "method": "ARIMA time-series forecasting",
-        "order": "(5,1,0)",
-        "concept":
-            "Model predicts using past 5 days patterns after removing trend."
-    }
-}
+     except Exception as e:
+        prediction_result = {
+            "model": "ARIMA",
+            "error": str(e),
+            "expected_price": None
+        }
+
 
 
     # ==================================================
     # 6️⃣ ARMA
     # ==================================================
     elif model == "ARMA":
-        arma = ARMA_MODEL(daily_df["Close"], order=(2, 1))
-        forecast = arma.fit().forecast(steps=days)[0]
+     try:
+        # Use RETURNS instead of prices
+        series = daily_df["Close"].pct_change().dropna()
+
+        if len(series) < 60:
+            raise Exception("Not enough data for ARMA")
+
+        arma = ARMA_MODEL(series, order=(2, 1))
+        arma_fit = arma.fit()
+
+        forecast = arma_fit.forecast(steps=days)
+
+        # Convert return → price
+        last_price = daily_df["Close"].iloc[-1]
+        predicted_price = last_price * (1 + forecast.iloc[-1])
 
         prediction_result = {
-    "model": "ARMA",
-    "expected_price": round(forecast[-1], 2),
+            "model": "ARMA",
+            "expected_price": round(float(predicted_price), 2),
+            "explanation": {
+                "method": "ARMA on RETURNS (stable version)",
+                "concept": "Model built on percentage changes instead of raw price",
+                "warning": "Short-term only"
+            }
+        }
 
-    "explanation": {
-        "method": "ARMA short-term model",
-        "order": "(2,1)",
-        "concept":
-            "Uses past prices + past errors to estimate near future."
-    }
-}
+     except Exception as e:
+        prediction_result = {
+            "model": "ARMA",
+            "error": str(e),
+            "expected_price": None
+        }
+
 
 
     # ==================================================
