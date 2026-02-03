@@ -15,11 +15,13 @@ app = FastAPI(title="Stock Predictor API")
 # -----------------------------
 # CORS
 # -----------------------------
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://stock-predictor-1-72h2.onrender.com",
         "http://localhost:3000",
-        "https://stock-predictor-1-72h2.onrender.com"
+        "http://localhost:5173"
     ],
     allow_credentials=True,
     allow_methods=["*"],
