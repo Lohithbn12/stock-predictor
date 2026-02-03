@@ -17,6 +17,11 @@ function StockPage() {
   // ✅ NEW STATE (ONLY ADDITION)
   const [showExplain, setShowExplain] = useState(false);
 
+   // =================== ONLY ADDITIONS ===================
+  const [showOverlay, setShowOverlay] = useState(false);
+  const [overlayData, setOverlayData] = useState([]);
+  // ======================================================
+
   const fetchStockData = async () => {
     if (!company || !days) return;
 
@@ -40,7 +45,27 @@ function StockPage() {
     setLoading(false);
   };
 
+ // ============= OVERLAY FUNCTION (NEW) =================
+  const fetchOverlay = async () => {
+    try {
+      const res = await fetch(
+        `${API_URL}/stock?company=${encodeURIComponent(company)}&days=${days}&model=${model}&range=90d`
+      );
 
+      const json = await res.json();
+
+      const combined = [
+        ...(json.hourly_prices || []),
+        ...(json.predicted_prices || [])
+      ];
+
+      setOverlayData(combined);
+      setShowOverlay(true);
+    } catch (e) {
+      console.log("overlay error", e);
+    }
+  };
+  // ======================================================
    // ================== ONLY REAL FIX ==================
   useEffect(() => {
     if (company) {
@@ -93,6 +118,17 @@ function StockPage() {
           </select>
 
           <button onClick={fetchStockData}>Search</button>
+          {/* ============= NEW BUTTON ============== */}
+          {data && (
+            <button onClick={() => {
+  if (showOverlay) setShowOverlay(false);
+  else fetchOverlay();
+}}>
+  {showOverlay ? "Hide Overlay" : "Show Prediction Overlay"}
+</button>
+
+          )}
+          {/* ======================================= */}
         </div>
 
         {loading && <p className="info">Loading...</p>}
@@ -190,7 +226,11 @@ function StockPage() {
 
           <h3>Hourly Price Trend</h3>
           <div className="chart-container">
-            <HourlyPriceChart prices={data.hourly_prices} />
+            <HourlyPriceChart
+  prices={data.hourly_prices}
+  overlay={showOverlay ? overlayData : null}
+/>
+
           </div>
 
           <h3>Last 4 Weeks</h3>
