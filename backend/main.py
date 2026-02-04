@@ -10,6 +10,15 @@ from arch import arch_model
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.arima.model import ARIMA as ARMA_MODEL
 
+
+from xgboost import XGBRegressor
+from sklearn.preprocessing import MinMaxScaler
+import tensorflow as tf
+from keras.models import Sequential
+from keras.layers import LSTM, Dense
+
+
+
 app = FastAPI(title="Stock Predictor API")
 
 # -----------------------------
@@ -27,6 +36,161 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ==========================================
+# FEATURE ENGINEERING (SAFE ADDITION)
+# ==========================================
+def enhance(df):
+    d = df.copy()
+
+    d["return"] = d["Close"].pct_change()
+
+    # EMA
+    d["ema20"] = d["Close"].ewm(span=20).mean()
+    d["ema50"] = d["Close"].ewm(span=50).mean()
+
+    # RSI
+    delta = d["Close"].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
+
+    rs = avg_gain / avg_loss
+    d["rsi"] = 100 - (100 / (1 + rs))
+
+    # Volume z
+    d["vol_z"] = (
+        d["Volume"] - d["Volume"].rolling(20).mean()
+    ) / d["Volume"].rolling(20).std()
+
+    return d.dropna()
+
+
+# ==========================================
+# XGBOOST MODEL
+# ==========================================
+def xgb_predict(df, days):
+
+    f = df.copy()
+
+    f["DayIndex"] = np.arange(len(f))
+
+    X = f[["DayIndex", "Volume", "rsi", "vol_z"]]
+    y = f["Close"]
+
+    model = XGBRegressor(n_estimators=120, learning_rate=0.05)
+    model.fit(X, y)
+
+    last = X.iloc[[-1]].copy()
+    last["DayIndex"] += days
+
+    return float(model.predict(last)[0])
+
+
+# ==========================================
+# LSTM MODEL
+# ==========================================
+def lstm_predict(df, days):
+
+    data = df["Close"].values.reshape(-1,1)
+
+    scaler = MinMaxScaler()
+    s = scaler.fit_transform(data)
+
+    X, y = [], []
+    for i in range(20, len(s)):
+        X.append(s[i-20:i, 0])
+        y.append(s[i,0])
+
+    X = np.array(X)
+    y = np.array(y)
+
+    X = X.reshape(X.shape[0], X.shape[1], 1)
+
+    m = Sequential([
+        LSTM(32, input_shape=(20,1)),
+        Dense(1)
+    ])
+
+    m.compile(loss="mse", optimizer="adam")
+    m.fit(X, y, epochs=8, verbose=0)
+
+    last = s[-20:].reshape(1,20,1)
+
+    p = m.predict(last, verbose=0)[0][0]
+
+    price = scaler.inverse_transform([[p]])[0][0]
+
+    # drift
+    ret = df["Close"].pct_change().tail(5).mean()
+
+    return float(price * (1 + ret * days/10))
+
+# ==========================================
+# ENSEMBLE + RISK
+# ==========================================
+def ensemble_engine(df, days):
+
+    p_linear = None
+    p_arima = None
+
+    # ---- Linear ----
+    try:
+        df["DayIndex"] = np.arange(len(df))
+        X = df[["DayIndex","Volume","rsi","vol_z"]]
+        y = df["Close"]
+
+        lr = LinearRegression().fit(X,y)
+        p_linear = float(lr.predict(X.iloc[[-1]])[0])
+    except:
+        pass
+
+    # ---- ARIMA ----
+    try:
+        ar = ARIMA(df["Close"], order=(2,1,2)).fit()
+        p_arima = float(ar.forecast()[0])
+    except:
+        pass
+
+    # ---- XGB ----
+    p_xgb = xgb_predict(df, days)
+
+    # ---- LSTM ----
+    p_lstm = lstm_predict(df, days)
+
+    # ---- Ensemble ----
+    prices = [p for p in [p_linear,p_arima,p_xgb,p_lstm] if p]
+
+    final = sum(prices)/len(prices)
+
+    # ---- Stop loss ----
+    vol = df["Close"].pct_change().std()
+
+    stop_loss = final * (1 - vol*2)
+    target = final * (1 + vol*3)
+
+    return final, stop_loss, target, {
+        "xgb": p_xgb,
+        "lstm": p_lstm,
+        "linear": p_linear,
+        "arima": p_arima
+    }
+
+# ==========================================
+# SAFE WRAPPER FOR ALL MODELS
+# ==========================================
+def get_ensemble_risk(df, days):
+     try:
+        f = enhance(df)
+        final, sl, tgt, parts = ensemble_engine(f, days)
+        return final, sl, tgt, parts
+     except:
+        return None, None, None, {}
+
+
 
 # -----------------------------
 # Resolve company → symbol
@@ -132,97 +296,140 @@ def get_stock_data(
     # 3️⃣ LINEAR REGRESSION (PRICE + VOLUME) – FIXED
     # ==================================================
     if model == "LINEAR":
-        daily_df = daily_df.dropna(subset=["Close", "Volume"]).copy()
 
-        daily_df["DayIndex"] = np.arange(len(daily_df))
+     df = enhance(daily_df)
 
-        X = daily_df[["DayIndex", "Volume"]].astype(float)
-        y = daily_df["Close"].astype(float)
+     df["DayIndex"] = np.arange(len(df))
 
-        lr = LinearRegression()
-        lr.fit(X, y)
+     X = df[["DayIndex", "Volume", "rsi", "vol_z"]].astype(float)
+     y = df["Close"].astype(float)
 
-        future_days = np.arange(len(daily_df), len(daily_df) + days)
+     lr = LinearRegression()
+     lr.fit(X, y)
 
-        avg_volume = float(daily_df["Volume"].tail(30).mean())
+     future_days = np.arange(len(df), len(df) + days)
 
-        future_X = pd.DataFrame({
-            "DayIndex": future_days,
-            "Volume": avg_volume
-        })
+     avg_volume = float(df["Volume"].tail(30).mean())
+     last_rsi = float(df["rsi"].iloc[-1])
+     last_volz = float(df["vol_z"].iloc[-1])
 
-        predicted_price = float(lr.predict(future_X)[-1])
+     future_X = pd.DataFrame({
+        "DayIndex": future_days,
+        "Volume": avg_volume,
+        "rsi": last_rsi,
+        "vol_z": last_volz
+     })
 
-        prediction_result = {
-    "model": "Linear Regression (Price + Volume)",
-    "expected_price": round(predicted_price, 2),
+     predicted_price = float(lr.predict(future_X)[-1])
 
-    "explanation": {
-        "method": "Linear regression using time trend + trading volume",
-        "inputs_used": ["DayIndex (trend)", "Volume"],
-        "avg_volume_used": round(avg_volume, 2),
-        "coefficients": {
-            "trend_weight": float(lr.coef_[0]),
-            "volume_weight": float(lr.coef_[1])
-        },
-        "interpretation":
-            "Price is estimated using a best-fit line where both "
-            "time progression and trading volume influence the future price."
-    }
-}
+          # ---- ENSEMBLE + STOP LOSS ----
+     ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
+
+
+     prediction_result = {
+        "model": "Linear Regression (Price + Volume)",
+        "expected_price": round(predicted_price, 2),
+
+        "ensemble_price": round(ens,2) if ens else None,
+        "stop_loss": round(sl,2) if sl else None,
+        "target": round(tgt,2) if tgt else None,
+
+        "explanation": {
+            "method": "Trend + RSI + Volume strength",
+            "inputs_used": ["Trend","Volume","RSI","Volume Z"],
+            "avg_volume_used": round(avg_volume, 2),
+            "coefficients": {
+                "trend_weight": float(lr.coef_[0]),
+                "volume_weight": float(lr.coef_[1])
+            },
+            "interpretation": "Adds momentum (RSI) to trend model"
+        }
+     }
+
+
 
 
     # ==================================================
     # 4️⃣ EWMA
     # ==================================================
     elif model == "EWMA":
-        vol_weight = daily_df["Volume"] / daily_df["Volume"].mean()
-        weighted_price = daily_df["Close"] * vol_weight
 
-        ewma_price = weighted_price.ewm(span=20, adjust=False).mean().iloc[-1]
+     df = enhance(daily_df)
 
-        prediction_result = {
-    "model": "EWMA (Volume-Weighted)",
-    "expected_price": round(ewma_price, 2),
+     momentum = df["return"].tail(5).mean()
 
-    "explanation": {
-        "method": "Exponentially weighted moving average adjusted by volume",
-        "concept":
-            "Recent prices get higher weight; volume amplifies strong moves.",
-        "span": 20
-    }
-}
+     vol_weight = df["Volume"] / df["Volume"].mean()
+
+     weighted = df["Close"] * vol_weight
+
+     base = weighted.ewm(span=20, adjust=False).mean().iloc[-1]
+
+    # Momentum adjustment
+     ewma_price = base * (1 + momentum * 2)
+
+     ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
+
+
+     prediction_result = {
+        "model": "EWMA (Volume-Weighted)",
+        "expected_price": round(float(ewma_price), 2),
+
+        "ensemble_price": round(ens,2) if ens else None,
+        "stop_loss": round(sl,2) if sl else None,
+        "target": round(tgt,2) if tgt else None,
+
+        "explanation": {
+            "method": "EWMA + momentum overlay",
+            "concept": "Recent returns tilt EWMA direction",
+            "span": 20
+        }
+     }
+
+
 
     # ==================================================
     # 5️⃣ ARIMA
     # ==================================================
     elif model == "ARIMA":
      try:
-        series = daily_df["Close"]
+      series = daily_df["Close"]
 
-        if len(series) < 100:
-            raise Exception("Need 100+ days for ARIMA")
+     # Auto difference check
+      if series.pct_change().std() > 0.04:
+        order = (2,1,2)
+      else:
+        order = (3,1,2)
 
-        arima = ARIMA(series, order=(3,1,2))
-        fit = arima.fit()
+      arima = ARIMA(series, order=order)
+      fit = arima.fit()
 
-        forecast = fit.forecast(steps=days)
+      forecast = fit.forecast(steps=days)
 
-        prediction_result = {
-            "model": "ARIMA",
-            "expected_price": round(float(forecast.iloc[-1]), 2),
-            "explanation": {
-                "method": "ARIMA with safer order (3,1,2)",
-                "concept": "Auto differenced price series"
-            }
+      ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
+
+
+      prediction_result = {
+        "model": "ARIMA",
+        "expected_price": round(float(forecast.iloc[-1]), 2),
+
+        "ensemble_price": round(ens,2) if ens else None,
+        "stop_loss": round(sl,2) if sl else None,
+        "target": round(tgt,2) if tgt else None,
+
+        "explanation": {
+            "method": f"Adaptive ARIMA {order}",
+            "concept": "Order adapts to volatility"
         }
+      }
+
 
      except Exception as e:
-        prediction_result = {
-            "model": "ARIMA",
-            "error": str(e),
-            "expected_price": None
-        }
+      prediction_result = {
+        "model": "ARIMA",
+        "error": str(e),
+        "expected_price": None
+    }
+
 
 
 
@@ -231,37 +438,55 @@ def get_stock_data(
     # ==================================================
     elif model == "ARMA":
      try:
-        # Use RETURNS instead of prices
-        series = daily_df["Close"].pct_change().dropna()
+    # ---- Use RETURNS ----
+      series = daily_df["Close"].pct_change().dropna()
 
-        if len(series) < 60:
-            raise Exception("Not enough data for ARMA")
+      if len(series) < 60:
+        raise Exception("Not enough data for ARMA")
 
-        arma = ARMA_MODEL(series, order=(2, 1))
-        arma_fit = arma.fit()
+    # ---- Adaptive order ----
+      vol = series.std()
 
-        forecast = arma_fit.forecast(steps=days)
+      order = (2, 1) if vol < 0.025 else (1, 1)
 
-        # Convert return → price
-        last_price = daily_df["Close"].iloc[-1]
-        predicted_price = last_price * (1 + forecast.iloc[-1])
+      arma = ARMA_MODEL(series, order=order)
+      arma_fit = arma.fit()
 
-        prediction_result = {
-            "model": "ARMA",
-            "expected_price": round(float(predicted_price), 2),
-            "explanation": {
-                "method": "ARMA on RETURNS (stable version)",
-                "concept": "Model built on percentage changes instead of raw price",
-                "warning": "Short-term only"
-            }
+      forecast = arma_fit.forecast(steps=days)
+
+    # ---- Momentum correction ----
+      mom = series.tail(5).mean()
+
+      last_price = daily_df["Close"].iloc[-1]
+
+      predicted_price = last_price * (1 + forecast.iloc[-1] + mom * 0.5)
+
+      ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
+
+
+      prediction_result = {
+        "model": "ARMA",
+        "expected_price": round(float(predicted_price), 2),
+
+        "ensemble_price": round(ens,2) if ens else None,
+        "stop_loss": round(sl,2) if sl else None,
+        "target": round(tgt,2) if tgt else None,
+
+        "explanation": {
+            "method": f"ARMA{order} on RETURNS + momentum",
+            "concept": "Return forecast adjusted by recent drift",
+            "warning": "Best for 1–10 days horizon"
         }
+      }
+
 
      except Exception as e:
-        prediction_result = {
-            "model": "ARMA",
-            "error": str(e),
-            "expected_price": None
-        }
+      prediction_result = {
+        "model": "ARMA",
+        "error": str(e),
+        "expected_price": None
+    }
+
 
 
 
@@ -269,25 +494,44 @@ def get_stock_data(
     # 7️⃣ ARCH
     # ==================================================
     elif model == "ARCH":
-        returns = daily_df["Close"].pct_change().dropna() * 100
-        garch = arch_model(returns, vol="Garch", p=1, q=1)
 
-        volatility = np.sqrt(
-            garch.fit(disp="off").forecast(horizon=days).variance.values[-1]
-        ).mean()
+     returns = daily_df["Close"].pct_change().dropna() * 100
 
-        prediction_result = {
-    "model": "ARCH (Volatility)",
-    "volatility_percent": round(volatility, 2),
+     garch = arch_model(returns, vol="Garch", p=1, q=1)
 
-    "explanation": {
-        "method": "GARCH volatility estimation",
-        "meaning":
-            "Measures expected fluctuation range, not direction.",
-        "interpretation":
-            "Higher % = higher risk and price swings."
-    }
-}
+     fit = garch.fit(disp="off")
+
+     var = fit.forecast(horizon=days).variance.values[-1]
+
+     vol = float(np.sqrt(var).mean())
+
+    # ---- Convert to price range ----
+     last = daily_df["Close"].iloc[-1]
+
+     upper = last * (1 + vol/100)
+     lower = last * (1 - vol/100)
+
+     ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
+
+
+     prediction_result = {
+        "model": "ARCH (Volatility)",
+
+        "volatility_percent": round(vol, 2),
+
+        "ensemble_price": round(ens,2) if ens else None,
+        "stop_loss": round(sl,2) if sl else None,
+        "target": round(tgt,2) if tgt else None,
+
+        "explanation": {
+            "method": "GARCH with price band",
+            "meaning": f"Expected range ₹{round(lower,2)} – ₹{round(upper,2)}",
+            "interpretation": "Risk not direction"
+        }
+     }
+
+     
+    
 
     else:
         return {"error": "Invalid model selected"}

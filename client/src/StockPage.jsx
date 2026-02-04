@@ -17,7 +17,7 @@ function StockPage() {
   // ✅ NEW STATE (ONLY ADDITION)
   const [showExplain, setShowExplain] = useState(false);
 
-   // =================== ONLY ADDITIONS ===================
+  // =================== ONLY ADDITIONS ===================
   const [showOverlay, setShowOverlay] = useState(false);
   const [overlayData, setOverlayData] = useState([]);
   // ======================================================
@@ -45,43 +45,45 @@ function StockPage() {
     setLoading(false);
   };
 
- // ============= OVERLAY FUNCTION (NEW) =================
+  // ============= OVERLAY FUNCTION (NEW) =================
   const fetchOverlay = () => {
 
-  if (!data?.hourly_prices) return;
+    if (!data?.hourly_prices) return;
 
-  const lastPoint =
-    data.hourly_prices[data.hourly_prices.length - 1];
+    const lastPoint =
+      data.hourly_prices[data.hourly_prices.length - 1];
 
-  const future = [];
+    const future = [];
 
-  for (let i = 1; i <= days; i++) {
-    future.push({
-      Datetime: new Date(
-        new Date(lastPoint.Datetime).getTime() +
-        i * 24 * 60 * 60 * 1000
-      ),
-      Close: data.prediction.expected_price || data.prediction.price
+    for (let i = 1; i <= days; i++) {
+      future.push({
+        Datetime: new Date(
+          new Date(lastPoint.Datetime).getTime() +
+          i * 24 * 60 * 60 * 1000
+        ),
+        Close: data.prediction.ensemble_price ||
+       data.prediction.expected_price
 
-    });
-  }
 
-  const combined = [
-    ...data.hourly_prices,
-    ...future
-  ];
+      });
+    }
 
-  setOverlayData(combined);
-  setShowOverlay(true);
-};
+    const combined = [
+      ...data.hourly_prices,
+      ...future
+    ];
 
-useEffect(() => {
-  console.log("overlayData", overlayData);
-}, [overlayData]);
+    setOverlayData(combined);
+    setShowOverlay(true);
+  };
+
+  useEffect(() => {
+    console.log("overlayData", overlayData);
+  }, [overlayData]);
 
 
   // ======================================================
-   // ================== ONLY REAL FIX ==================
+  // ================== ONLY REAL FIX ==================
   useEffect(() => {
     if (company) {
       fetchStockData();
@@ -135,12 +137,12 @@ useEffect(() => {
           <button onClick={fetchStockData}>Search</button>
           {/* ============= NEW BUTTON ============== */}
           <button onClick={() => {
-  if (!data) return;
-  if (showOverlay) setShowOverlay(false);
-  else fetchOverlay();
-}}>
-  {showOverlay ? "Hide Overlay" : "Show Prediction Overlay"}
-</button>
+            if (!data) return;
+            if (showOverlay) setShowOverlay(false);
+            else fetchOverlay();
+          }}>
+            {showOverlay ? "Hide Overlay" : "Show Prediction Overlay"}
+          </button>
           {/* ======================================= */}
         </div>
 
@@ -152,7 +154,7 @@ useEffect(() => {
       {data && (
         <div className="card result-card">
 
-          
+
           {/* ================= ONLY ADDITION START ================= */}
 
           <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
@@ -196,10 +198,33 @@ useEffect(() => {
                 {data.prediction.expected_price !== undefined
                   ? `₹${data.prediction.expected_price}`
                   : data.prediction.volatility_percent !== undefined
-                  ? `${data.prediction.volatility_percent}%`
-                  : "N/A"}
+                    ? `${data.prediction.volatility_percent}%`
+                    : "N/A"}
               </b>
             </div>
+
+            {/* ===== NEW ADDITIONS ===== */}
+            {data.prediction.ensemble_price && (
+              <div className="stat-box">
+                <span>Ensemble Price</span>
+                <b>₹{data.prediction.ensemble_price}</b>
+              </div>
+            )}
+
+            {data.prediction.stop_loss && (
+              <div className="stat-box">
+                <span>Stop Loss</span>
+                <b>₹{data.prediction.stop_loss}</b>
+              </div>
+            )}
+
+            {data.prediction.target && (
+              <div className="stat-box">
+                <span>Target</span>
+                <b>₹{data.prediction.target}</b>
+              </div>
+            )}
+            {/* ========================= */}
           </div>
 
           {/* ✅ NEW COMPARISON SECTION */}
@@ -240,9 +265,9 @@ useEffect(() => {
           <h3>Hourly Price Trend</h3>
           <div className="chart-container">
             <HourlyPriceChart
-  prices={data.hourly_prices}
-  overlay={showOverlay ? overlayData : null}
-/>
+              prices={data.hourly_prices}
+              overlay={showOverlay ? overlayData : null}
+            />
 
           </div>
 
@@ -256,125 +281,125 @@ useEffect(() => {
       {/* ✅ EXPLANATION MODAL (NEW) */}
       {showExplain && data && (
         <div className="modal-overlay">
-  <div className="modal">
-    <h2>How is the predicted value calculated?</h2>
+          <div className="modal">
+            <h2>How is the predicted value calculated?</h2>
 
-    <p>
-      <b>Selected Model:</b> {data.prediction.model}
-    </p>
+            <p>
+              <b>Selected Model:</b> {data.prediction.model}
+            </p>
 
-    {/* ===== BACKEND EXPLANATION (PRIMARY) ===== */}
-    {data.prediction.explanation && (
-      <div style={{ marginBottom: "12px" }}>
+            {/* ===== BACKEND EXPLANATION (PRIMARY) ===== */}
+            {data.prediction.explanation && (
+              <div style={{ marginBottom: "12px" }}>
 
-        {data.prediction.explanation.method && (
-          <p>
-            <b>Method:</b> {data.prediction.explanation.method}
-          </p>
-        )}
+                {data.prediction.explanation.method && (
+                  <p>
+                    <b>Method:</b> {data.prediction.explanation.method}
+                  </p>
+                )}
 
-        {data.prediction.explanation.concept && (
-          <p>
-            <b>Concept:</b> {data.prediction.explanation.concept}
-          </p>
-        )}
+                {data.prediction.explanation.concept && (
+                  <p>
+                    <b>Concept:</b> {data.prediction.explanation.concept}
+                  </p>
+                )}
 
-        {data.prediction.explanation.inputs_used && (
-          <>
-            <b>Inputs Used:</b>
-            <ul>
-              {data.prediction.explanation.inputs_used.map((i, idx) => (
-                <li key={idx}>{i}</li>
-              ))}
-            </ul>
-          </>
-        )}
+                {data.prediction.explanation.inputs_used && (
+                  <>
+                    <b>Inputs Used:</b>
+                    <ul>
+                      {data.prediction.explanation.inputs_used.map((i, idx) => (
+                        <li key={idx}>{i}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
 
-        {data.prediction.explanation.coefficients && (
-          <>
-            <b>Model Weights:</b>
-            <ul>
-              <li>
-                Trend impact: {data.prediction.explanation.coefficients.trend_weight}
-              </li>
-              <li>
-                Volume impact: {data.prediction.explanation.coefficients.volume_weight}
-              </li>
-            </ul>
-          </>
-        )}
+                {data.prediction.explanation.coefficients && (
+                  <>
+                    <b>Model Weights:</b>
+                    <ul>
+                      <li>
+                        Trend impact: {data.prediction.explanation.coefficients.trend_weight}
+                      </li>
+                      <li>
+                        Volume impact: {data.prediction.explanation.coefficients.volume_weight}
+                      </li>
+                    </ul>
+                  </>
+                )}
 
-        {data.prediction.explanation.interpretation && (
-          <p>
-            <b>Interpretation:</b> {data.prediction.explanation.interpretation}
-          </p>
-        )}
+                {data.prediction.explanation.interpretation && (
+                  <p>
+                    <b>Interpretation:</b> {data.prediction.explanation.interpretation}
+                  </p>
+                )}
 
-        {data.prediction.explanation.meaning && (
-          <p>
-            <b>Meaning:</b> {data.prediction.explanation.meaning}
-          </p>
-        )}
+                {data.prediction.explanation.meaning && (
+                  <p>
+                    <b>Meaning:</b> {data.prediction.explanation.meaning}
+                  </p>
+                )}
 
-      </div>
-    )}
+              </div>
+            )}
 
-    {/* ===== FALLBACK TEXTS (YOUR ORIGINAL LOGIC KEPT) ===== */}
+            {/* ===== FALLBACK TEXTS (YOUR ORIGINAL LOGIC KEPT) ===== */}
 
-    {data.prediction.model.includes("Linear") && !data.prediction.explanation && (
-      <>
-        <p>
-          Linear Regression uses historical prices and trading volume.
-        </p>
-        <ul>
-          <li>Time (day index) captures trend</li>
-          <li>Volume strengthens price signals</li>
-          <li>Model fits a best-fit line to estimate future price</li>
-        </ul>
-      </>
-    )}
+            {data.prediction.model.includes("Linear") && !data.prediction.explanation && (
+              <>
+                <p>
+                  Linear Regression uses historical prices and trading volume.
+                </p>
+                <ul>
+                  <li>Time (day index) captures trend</li>
+                  <li>Volume strengthens price signals</li>
+                  <li>Model fits a best-fit line to estimate future price</li>
+                </ul>
+              </>
+            )}
 
-    {data.prediction.model.includes("EWMA") && !data.prediction.explanation && (
-      <>
-        <p>
-          EWMA gives more weight to recent prices.
-        </p>
-        <ul>
-          <li>Recent data influences prediction more</li>
-          <li>Volume-weighting improves momentum detection</li>
-        </ul>
-      </>
-    )}
+            {data.prediction.model.includes("EWMA") && !data.prediction.explanation && (
+              <>
+                <p>
+                  EWMA gives more weight to recent prices.
+                </p>
+                <ul>
+                  <li>Recent data influences prediction more</li>
+                  <li>Volume-weighting improves momentum detection</li>
+                </ul>
+              </>
+            )}
 
-    {data.prediction.model === "ARIMA" && !data.prediction.explanation && (
-      <p>
-        ARIMA predicts future prices using historical price patterns,
-        trends, and differencing.
-      </p>
-    )}
+            {data.prediction.model === "ARIMA" && !data.prediction.explanation && (
+              <p>
+                ARIMA predicts future prices using historical price patterns,
+                trends, and differencing.
+              </p>
+            )}
 
-    {data.prediction.model === "ARMA" && !data.prediction.explanation && (
-      <p>
-        ARMA uses past prices and past prediction errors for short-term
-        forecasting.
-      </p>
-    )}
+            {data.prediction.model === "ARMA" && !data.prediction.explanation && (
+              <p>
+                ARMA uses past prices and past prediction errors for short-term
+                forecasting.
+              </p>
+            )}
 
-    {data.prediction.model.includes("ARCH") && !data.prediction.explanation && (
-      <p>
-        ARCH/GARCH models market volatility, not price direction.
-        Higher volatility means higher price fluctuation risk.
-      </p>
-    )}
+            {data.prediction.model.includes("ARCH") && !data.prediction.explanation && (
+              <p>
+                ARCH/GARCH models market volatility, not price direction.
+                Higher volatility means higher price fluctuation risk.
+              </p>
+            )}
 
-    <button
-      className="close-btn"
-      onClick={() => setShowExplain(false)}
-    >
-      Close
-    </button>
-  </div>
-</div>
+            <button
+              className="close-btn"
+              onClick={() => setShowExplain(false)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
 
       )}
     </div>
