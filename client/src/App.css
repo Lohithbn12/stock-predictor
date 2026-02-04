@@ -5,6 +5,22 @@ body {
   background: linear-gradient(135deg, #eef2ff, #f8fafc);
 }
 
+/* ===== HEADER FIX ===== */
+
+.header {
+  width: 100%;
+  max-width: 600px;
+  margin: auto;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.header h1 {
+  font-size: 24px;
+  text-align: center;
+  word-wrap: break-word;
+}
+
 /* Page wrapper */
 .page {
   padding: 40px 20px;
@@ -254,16 +270,44 @@ h1 {
   flex: 1;
 }
 
+.range-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* Mobile: full width stack */
 @media (max-width: 768px) {
   .search-row {
-    flex-direction: column;
+    flex-direction: column !important;
+    align-items: stretch !important;
   }
 
   .search-row input,
   .search-row select,
   .search-row button {
+    width: 100% !important;
+    margin-bottom: 6px;
+  }
+
+  .explain-btn {
+    position: static !important;   /* remove absolute */
+    display: block;
     width: 100%;
+    margin: 8px 0 10px 0;
+  }
+
+  .card {
+    position: relative;
+    padding-top: 15px;
+  }
+  .card h1 {
+    font-size: 18px !important;
+    text-align: center;
+  }
+
+  h1 {
+    margin-bottom: 6px;
   }
 
   .stats {
@@ -280,6 +324,29 @@ h1 {
 
   .modal {
     width: 95%;
+  }
+
+  .header {
+    padding: 6px;
+  }
+
+  .range-row button {
+    flex: 1;
+    font-size: 12px;
+  }
+
+  .subtitle {
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .header h1 {
+    font-size: 18px;       /* smaller on mobile */
+  }
+
+  .explain-box {
+    width: 100% !important;
+    font-size: 14px;
   }
 }
 
