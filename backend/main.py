@@ -74,6 +74,9 @@ def enhance(df):
 # ==========================================
 def xgb_predict(df, days):
 
+    if len(df) < 40:
+        return None
+
     f = df.copy()
 
     f["DayIndex"] = np.arange(len(f))
@@ -81,13 +84,14 @@ def xgb_predict(df, days):
     X = f[["DayIndex", "Volume", "rsi", "vol_z"]]
     y = f["Close"]
 
-    model = XGBRegressor(n_estimators=120, learning_rate=0.05)
+    model = XGBRegressor(n_estimators=80, learning_rate=0.05)
     model.fit(X, y)
 
     last = X.iloc[[-1]].copy()
     last["DayIndex"] += days
 
     return float(model.predict(last)[0])
+
 
 
 # ==========================================
@@ -137,7 +141,6 @@ def ensemble_engine(df, days):
     p_linear = None
     p_arima = None
 
-    # ---- Linear ----
     try:
         df["DayIndex"] = np.arange(len(df))
         X = df[["DayIndex","Volume","rsi","vol_z"]]
@@ -148,25 +151,22 @@ def ensemble_engine(df, days):
     except:
         pass
 
-    # ---- ARIMA ----
     try:
         ar = ARIMA(df["Close"], order=(2,1,2)).fit()
         p_arima = float(ar.forecast()[0])
     except:
         pass
 
-    # ---- XGB ----
     p_xgb = xgb_predict(df, days)
-
-    # ---- LSTM ----
     p_lstm = lstm_predict(df, days)
 
-    # ---- Ensemble ----
     prices = [p for p in [p_linear,p_arima,p_xgb,p_lstm] if p]
+
+    if not prices:
+        return None, None, None, {}
 
     final = sum(prices)/len(prices)
 
-    # ---- Stop loss ----
     vol = df["Close"].pct_change().std()
 
     stop_loss = final * (1 - vol*2)
@@ -178,6 +178,7 @@ def ensemble_engine(df, days):
         "linear": p_linear,
         "arima": p_arima
     }
+
 
 # ==========================================
 # SAFE WRAPPER FOR ALL MODELS

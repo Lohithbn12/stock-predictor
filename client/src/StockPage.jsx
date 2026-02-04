@@ -61,8 +61,10 @@ function StockPage() {
           new Date(lastPoint.Datetime).getTime() +
           i * 24 * 60 * 60 * 1000
         ),
-        Close: data.prediction.ensemble_price ||
-       data.prediction.expected_price
+        Close:
+    data.prediction?.ensemble_price ??
+    data.prediction?.expected_price ??
+    data.last_close
 
 
       });
