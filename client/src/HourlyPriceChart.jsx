@@ -82,10 +82,11 @@ function HourlyPriceChart({ prices, overlay }) {
   };
 
   return (
-    <div className="chart-container">
-      <Line data={data} options={options} />
-    </div>
-  );
+  <div className="chart-container" style={{ height: "400px" }}>
+    <Line data={data} options={options} />
+  </div>
+);
+
 }
 
 export default HourlyPriceChart;
