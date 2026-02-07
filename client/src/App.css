@@ -182,6 +182,16 @@ h1 {
     font-size: 18px;
     text-align: center;
   }
+
+   .signal-container {
+    padding: 8px;
+    font-size: 13px;
+  }
+
+  .buttons button {
+    width: 30%;
+    margin-right: 4px;
+  }
 }
 
 .table-container {
@@ -409,4 +419,27 @@ button {
 .reasons {
   margin-top: 4px;
   color: #555;
+}
+
+.buttons button {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+
+/* Model comparison cards */
+.model-card {
+  border: 1px solid #e5e7eb;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.search-row button:last-child {
+  background: #0ea5e9;
+}
+
+.search-row button:last-child:hover {
+  background: #0284c7;
 }

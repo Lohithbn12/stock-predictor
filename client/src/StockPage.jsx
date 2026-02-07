@@ -46,38 +46,89 @@ function StockPage() {
   };
 
   // ============= OVERLAY FUNCTION (NEW) =================
-  const fetchOverlay = () => {
+  // ============= OVERLAY FUNCTION (UPDATED) =================
+const fetchOverlay = () => {
 
-    if (!data?.hourly_prices) return;
+  if (!data?.hourly_prices) return;
 
-    const lastPoint =
-      data.hourly_prices[data.hourly_prices.length - 1];
+  const lastPoint =
+    data.hourly_prices[data.hourly_prices.length - 1];
 
-    const future = [];
+  const baseDate =
+    lastPoint.Datetime || lastPoint.Date;
 
-    for (let i = 1; i <= days; i++) {
-      future.push({
-        Datetime: new Date(
-          new Date(lastPoint.Datetime).getTime() +
-          i * 24 * 60 * 60 * 1000
-        ),
-        Close:
-          data.prediction?.ensemble_price ??
-          data.prediction?.expected_price ??
-          data.last_close
+  const startPrice = data.last_close;
 
+  // ========================================================
+  // 1) IF BACKEND GIVES FORECAST PATH → USE REAL MODEL CURVE
+  // ========================================================
+  if (data.forecast_path && data.forecast_path.length > 0) {
 
-      });
-    }
+    const future = data.forecast_path.map(p => ({
 
-    const combined = [
+      Datetime: new Date(
+        new Date(baseDate).getTime() +
+        p.step * 24 * 60 * 60 * 1000
+      ),
+
+      Close: p.price
+    }));
+
+    setOverlayData([
       ...data.hourly_prices,
       ...future
-    ];
+    ]);
 
-    setOverlayData(combined);
     setShowOverlay(true);
-  };
+    return;
+  }
+
+  // ========================================================
+  // 2) FALLBACK → SMART CURVE (OLD LOGIC)
+  // ========================================================
+
+  const target =
+    data.prediction?.ensemble_price ??
+    data.prediction?.expected_price ??
+    data.last_close;
+
+  const future = [];
+
+  for (let i = 1; i <= days; i++) {
+
+    const progress = i / days;
+
+    // smooth curve shape
+    const curve = Math.pow(progress, 1.2);
+
+    // tiny volatility noise
+    const noise =
+      (Math.random() - 0.5) *
+      startPrice * 0.002;
+
+    const price =
+      startPrice +
+      (target - startPrice) * curve +
+      noise;
+
+    future.push({
+      Datetime: new Date(
+        new Date(baseDate).getTime() +
+        i * 24 * 60 * 60 * 1000
+      ),
+      Close: Number(price.toFixed(2))
+    });
+  }
+
+  setOverlayData([
+    ...data.hourly_prices,
+    ...future
+  ]);
+
+  setShowOverlay(true);
+};
+
+
 
   useEffect(() => {
     console.log("overlayData", overlayData);

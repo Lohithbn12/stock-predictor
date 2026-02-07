@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from arch import arch_model
 from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.arima.model import ARIMA as ARMA_MODEL
+from statsmodels.tsa.arima.model import ARIMA as ARIMA_MODEL
 
 
 from xgboost import XGBRegressor
@@ -82,6 +82,106 @@ def xgb_predict(df, days):
     last["DayIndex"] += days
 
     return float(model.predict(last)[0])
+
+def linear_predict_for_eval(df, days):
+
+    df = enhance(df)
+
+    df["DayIndex"] = np.arange(len(df))
+
+    X = df[["DayIndex","Volume","rsi","vol_z"]]
+    y = df["Close"]
+
+    lr = LinearRegression().fit(X,y)
+
+    last = X.iloc[[-1]].copy()
+    last["DayIndex"] += days
+
+    return float(lr.predict(last)[0])
+
+
+def ewma_predict_for_eval(df, days):
+
+    df = enhance(df)
+
+    momentum = df["return"].tail(5).mean()
+
+    vol_weight = df["Volume"] / df["Volume"].mean()
+
+    weighted = df["Close"] * vol_weight
+
+    base = weighted.ewm(span=20, adjust=False).mean().iloc[-1]
+
+    return float(base * (1 + momentum * 2))
+
+def arima_predict_for_eval(df, days):
+
+    try:
+        series = df["Close"]
+
+        # Same logic as main ARIMA
+        if series.pct_change().std() > 0.04:
+            order = (2,1,2)
+        else:
+            order = (3,1,2)
+
+        fit = ARIMA(series, order=order).fit()
+
+        forecast = fit.forecast(steps=days)
+
+        return float(forecast.iloc[-1])
+
+    except:
+        raise Exception("ARIMA eval failed")
+
+
+
+def arma_predict_for_eval(df, days):
+
+    series = df["Close"].pct_change().dropna()
+
+    if len(series) < 60:
+        raise Exception("Not enough data")
+
+    vol = series.std()
+
+    order = (2,1) if vol < 0.025 else (1,1)
+
+    # ARMA via ARIMA(p,0,q)
+    fit = ARIMA(series, order=(order[0],0,order[1])).fit()
+
+    forecast = fit.forecast(steps=days)
+
+    mom = series.tail(5).mean()
+
+    last_price = df["Close"].iloc[-1]
+
+    return float(last_price * (1 + forecast.iloc[-1] + mom*0.5))
+
+
+def xgb_predict_for_eval(df, days):
+    return xgb_predict(df, days)
+
+
+def arch_risk_eval(df, days):
+
+    returns = df["Close"].pct_change().dropna()*100
+
+    fit = arch_model(returns, vol="Garch", p=1, q=1).fit(disp="off")
+
+    var = fit.forecast(horizon=days).variance.values[-1]
+
+    vol = float(np.sqrt(var).mean())
+
+    return {
+        "volatility": round(vol,2),
+        "risk_level":
+            "SAFE" if vol < 2 else
+            "RISKY" if vol < 4 else
+            "DANGEROUS"
+    }
+
+
 
 
 # =====================================================
@@ -185,6 +285,59 @@ def walk_forward_validation(df, days=10):
     except:
         return None
 
+# =====================================================
+# FORECAST ACCURACY ENGINE
+# =====================================================
+def evaluate_forecast_accuracy(df, model_fn, horizon=10):
+
+    errors = []
+
+    for i in range(200, len(df)-horizon):
+
+        train = df.iloc[:i]
+        test  = df.iloc[i:i+horizon]
+
+        try:
+            pred = model_fn(train, horizon)
+
+            actual = float(test["Close"].iloc[-1])
+
+            errors.append({
+                "mae": abs(actual - pred),
+                "mape": abs(actual - pred) / actual,
+                "bias": pred - actual
+            })
+        except:
+            continue
+
+    if not errors:
+        return None
+
+    return {
+        "MAE": round(np.mean([e["mae"] for e in errors]),2),
+        "MAPE": round(np.mean([e["mape"] for e in errors])*100,2),
+        "BIAS": round(np.mean([e["bias"] for e in errors]),2)
+    }
+
+
+# =====================================================
+# TRADING ACCURACY ENGINE
+# =====================================================
+def evaluate_trading_accuracy(df, days=10):
+
+    result = walk_forward_validation(df, days)
+
+    if not result:
+        return None
+
+    return {
+        "win_rate": result["win_rate"],
+        "profit_factor": result["profit_factor"],
+        "max_drawdown": result["max_drawdown"],
+        "approved": result["approved"]
+    }
+
+
 
 # ==========================================
 # ENSEMBLE + RISK
@@ -242,6 +395,149 @@ def get_ensemble_risk(df, days):
         return final, sl, tgt, parts
      except:
         return None, None, None, {}
+     
+
+# ==========================================
+# MULTI STEP FORECAST PATH GENERATOR
+# ==========================================
+def generate_forecast_path(df, model, days):
+
+    try:
+        df = enhance(df)
+
+        last_price = float(df["Close"].iloc[-1])
+
+        path = []
+
+        # ===== LINEAR PATH =====
+        if model == "LINEAR":
+
+            df["DayIndex"] = np.arange(len(df))
+
+            X = df[["DayIndex","Volume","rsi","vol_z"]]
+            y = df["Close"]
+
+            lr = LinearRegression().fit(X,y)
+
+            avg_volume = float(df["Volume"].tail(30).mean())
+            last_rsi = float(df["rsi"].iloc[-1])
+            last_volz = float(df["vol_z"].iloc[-1])
+
+            for i in range(1, days+1):
+
+                future = pd.DataFrame({
+                    "DayIndex": [len(df)+i],
+                    "Volume": [avg_volume],
+                    "rsi": [last_rsi],
+                    "vol_z": [last_volz]
+                })
+
+                p = float(lr.predict(future)[0])
+
+                path.append({"step": i, "price": round(p,2)})
+
+
+        # ===== EWMA PATH =====
+        elif model == "EWMA":
+
+            momentum = df["return"].tail(5).mean()
+
+            vol_weight = df["Volume"] / df["Volume"].mean()
+
+            weighted = df["Close"] * vol_weight
+
+            base = weighted.ewm(span=20, adjust=False).mean().iloc[-1]
+
+            target = float(base * (1 + momentum*2))
+
+            for i in range(1, days+1):
+
+                prog = i/days
+                p = last_price + (target-last_price)*prog
+
+                path.append({"step": i, "price": round(p,2)})
+
+
+        # ===== ARIMA PATH =====
+        elif model == "ARIMA":
+
+            series = df["Close"]
+
+            order = (2,1,2) if series.pct_change().std()>0.04 else (3,1,2)
+
+            fit = ARIMA(series, order=order).fit()
+
+            fc = fit.forecast(steps=days)
+
+            for i,v in enumerate(fc):
+                path.append({"step": i+1, "price": round(float(v),2)})
+
+
+        # ===== ARMA PATH =====
+        elif model == "ARMA":
+
+            series = df["Close"].pct_change().dropna()
+
+            vol = series.std()
+            order = (2,1) if vol<0.025 else (1,1)
+
+            fit = ARIMA(series, order=(order[0],0,order[1])).fit()
+
+            fc = fit.forecast(steps=days)
+
+            mom = series.tail(5).mean()
+
+            for i,v in enumerate(fc):
+
+                p = last_price*(1+float(v)+mom*0.5)
+
+                path.append({"step": i+1, "price": round(p,2)})
+
+
+        # ===== XGB PATH =====
+        elif model == "XGB":
+
+            base = xgb_predict(df, days)
+
+            for i in range(1, days+1):
+
+                prog = i/days
+
+                p = last_price + (base-last_price)*prog
+
+                path.append({"step": i, "price": round(p,2)})
+
+
+        # ===== ARCH PATH (BAND CENTER) =====
+        elif model == "ARCH":
+
+            returns = df["Close"].pct_change().dropna()*100
+
+            fit = arch_model(returns, vol="Garch", p=1, q=1).fit(disp="off")
+
+            var = fit.forecast(horizon=days).variance.values[-1]
+
+            vol = float(np.sqrt(var).mean())
+
+            upper = last_price*(1+vol/100)
+            lower = last_price*(1-vol/100)
+
+            mid = (upper+lower)/2
+
+            for i in range(1, days+1):
+
+                prog = i/days
+
+                p = last_price + (mid-last_price)*prog
+
+                path.append({"step": i, "price": round(p,2)})
+
+
+        return path
+
+    except:
+        return []
+
 
 
 
@@ -613,7 +909,7 @@ def get_stock_data(
 
       order = (2, 1) if vol < 0.025 else (1, 1)
 
-      arma = ARMA_MODEL(series, order=order)
+      arma = ARIMA_MODEL(series, order=(order[0], 0, order[1]))
       arma_fit = arma.fit()
 
       forecast = arma_fit.forecast(steps=days)
@@ -841,6 +1137,88 @@ def get_stock_data(
 
     prediction_result["comparison"] = all_models
 
+    # ======= NEW ACCURACY MODULE (ALL MODELS) =======
+
+    trading_acc = evaluate_trading_accuracy(daily_df, days)
+
+# -------- MODEL SPECIFIC FORECAST --------
+
+    forecast_acc = None
+
+    # ---- SPEED PROTECTION ----
+    if len(daily_df) > 600:
+     acc_df = daily_df.tail(600)
+    else:
+     acc_df = daily_df
+
+
+    if model == "LINEAR":
+     forecast_acc = evaluate_forecast_accuracy(
+        acc_df,
+        linear_predict_for_eval,
+        days
+    )
+
+    elif model == "EWMA":
+     forecast_acc = evaluate_forecast_accuracy(
+        acc_df,
+        ewma_predict_for_eval,
+        days
+    )
+
+    elif model == "ARIMA":
+     forecast_acc = evaluate_forecast_accuracy(
+        acc_df,
+        arima_predict_for_eval,
+        days
+    )
+
+    elif model == "ARMA":
+     forecast_acc = evaluate_forecast_accuracy(
+        acc_df,
+        arma_predict_for_eval,
+        days
+    )
+
+    elif model == "ARCH":
+     forecast_acc = arch_risk_eval(acc_df, days)
+
+
+# -------- RELIABILITY SCORE --------
+
+    reliability = 0
+
+# For price models only
+    if trading_acc and forecast_acc and model != "ARCH":
+
+     reliability = round(
+        0.6 * (trading_acc["win_rate"] * 100) +
+        0.4 * (100 - forecast_acc["MAPE"]),
+    2)
+
+# For ARCH use safety style score
+    if trading_acc and model == "ARCH":
+
+     risk = forecast_acc.get("volatility", 5)
+
+     safety = (
+        100 if risk < 2 else
+        60 if risk < 4 else
+        30
+    )
+
+     reliability = round(
+        0.5 * (trading_acc["win_rate"] * 100) +
+        0.5 * safety,
+    2)
+     
+     forecast_path = generate_forecast_path(
+    daily_df,
+    model.upper(),
+    days
+)
+
+
 
     return {
         "company": company,
@@ -849,6 +1227,13 @@ def get_stock_data(
         "last_close": last_close,
         "prediction": prediction_result,
         "signal": signal_info,
+        "forecast_path": forecast_path,
+        "accuracy": {
+            "trading": trading_acc,
+            "forecast": forecast_acc,
+            "reliability_score": reliability
+        },
+
 
         # ✅ FRONTEND CRITICAL
         "hourly_prices": hourly_prices,

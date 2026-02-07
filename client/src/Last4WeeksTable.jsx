@@ -21,20 +21,34 @@ function Last4WeeksTable({ data }) {
         </thead>
 
         <tbody>
-          {data.map((row, i) => (
-            <tr key={i}>
-              <td>{row.Date}</td>
-              <td>₹{row.Open.toFixed(2)}</td>
-              <td
-                style={{
-                  color: row.Close >= row.Open ? "#16a34a" : "#dc2626",
-                  fontWeight: 600
-                }}
-              >
-                ₹{row.Close.toFixed(2)}
-              </td>
-            </tr>
-          ))}
+          {data.map((row, i) => {
+
+            // ✅ SAFETY HANDLING
+            const open = Number(row.Open || 0);
+            const close = Number(row.Close || 0);
+
+            // ✅ NICE DATE FORMAT
+            const date = row.Date
+              ? new Date(row.Date).toLocaleDateString("en-IN")
+              : "-";
+
+            return (
+              <tr key={i}>
+                <td>{date}</td>
+
+                <td>₹{open.toFixed(2)}</td>
+
+                <td
+                  style={{
+                    color: close >= open ? "#16a34a" : "#dc2626",
+                    fontWeight: 600
+                  }}
+                >
+                  ₹{close.toFixed(2)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
