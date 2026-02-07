@@ -119,7 +119,7 @@ function StockPage() {
             onChange={(e) => setCompany(e.target.value)}
           />
 
-          <select value={days} onChange={(e) => setDays(e.target.value)}>
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={1}>1 Days</option>
             <option value={7}>7 Days</option>
             <option value={30}>30 Days</option>

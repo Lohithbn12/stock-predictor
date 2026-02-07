@@ -12,11 +12,6 @@ from statsmodels.tsa.arima.model import ARIMA as ARMA_MODEL
 
 
 from xgboost import XGBRegressor
-from sklearn.preprocessing import MinMaxScaler
-import tensorflow as tf
-from keras.models import Sequential
-from keras.layers import LSTM, Dense
-
 
 
 app = FastAPI(title="Stock Predictor API")
@@ -89,45 +84,107 @@ def xgb_predict(df, days):
     return float(model.predict(last)[0])
 
 
+# =====================================================
+# WALK FORWARD VALIDATION (INFORMATION ONLY)
+# =====================================================
+def walk_forward_validation(df, days=10):
+    try:
+        df = enhance(df)
 
-# ==========================================
-# LSTM MODEL
-# ==========================================
-def lstm_predict(df, days):
+        trades = []
+        equity = 100
 
-    data = df["Close"].values.reshape(-1,1)
+        for i in range(200, len(df)-days, days):
 
-    scaler = MinMaxScaler()
-    s = scaler.fit_transform(data)
+            train = df.iloc[:i]
+            test = df.iloc[i:i+days]
 
-    X, y = [], []
-    for i in range(20, len(s)):
-        X.append(s[i-20:i, 0])
-        y.append(s[i,0])
+            train["DayIndex"] = np.arange(len(train))
+            X = train[["DayIndex","Volume","rsi","vol_z"]]
+            y = train["Close"]
 
-    X = np.array(X)
-    y = np.array(y)
+            lr = LinearRegression().fit(X,y)
 
-    X = X.reshape(X.shape[0], X.shape[1], 1)
+            last = X.iloc[[-1]].copy()
+            last["DayIndex"] += days
 
-    m = Sequential([
-        LSTM(32, input_shape=(20,1)),
-        Dense(1)
-    ])
+            pred = float(lr.predict(last)[0])
 
-    m.compile(loss="mse", optimizer="adam")
-    m.fit(X, y, epochs=8, verbose=0)
+            entry = float(train["Close"].iloc[-1])
 
-    last = s[-20:].reshape(1,20,1)
+            vol = train["Close"].pct_change().std()
 
-    p = m.predict(last, verbose=0)[0][0]
+            sl = entry * (1 - vol*2)
+            tgt = entry * (1 + vol*3)
 
-    price = scaler.inverse_transform([[p]])[0][0]
+            hit = False
+            result = 0
 
-    # drift
-    ret = df["Close"].pct_change().tail(5).mean()
+            for _, row in test.iterrows():
 
-    return float(price * (1 + ret * days/10))
+                high = row["High"]
+                low  = row["Low"]
+
+                if low <= sl:
+                    result = -1
+                    hit = True
+                    break
+
+                if high >= tgt:
+                    result = 1
+                    hit = True
+                    break
+
+            if not hit:
+                close = float(test["Close"].iloc[-1])
+                result = 1 if close > entry else -1
+
+            pnl = (tgt-entry) if result==1 else (entry-sl)
+
+            equity += pnl
+
+            trades.append({
+                "result": result,
+                "pnl": pnl,
+                "equity": equity
+            })
+
+        if len(trades) < 20:
+            return None
+
+        wins = [t for t in trades if t["result"]==1]
+        losses = [t for t in trades if t["result"]==-1]
+
+        win_rate = len(wins)/len(trades)
+
+        total_profit = sum(t["pnl"] for t in wins)
+        total_loss = abs(sum(t["pnl"] for t in losses)) + 1e-6
+
+        profit_factor = total_profit/total_loss
+
+        eq = [t["equity"] for t in trades]
+        peak = eq[0]
+        dd = 0
+
+        for e in eq:
+            peak = max(peak,e)
+            dd = max(dd, peak-e)
+
+        max_dd = dd
+
+        return {
+            "win_rate": round(win_rate,3),
+            "profit_factor": round(profit_factor,2),
+            "max_drawdown": round(max_dd,2),
+            "approved":
+                win_rate>0.55 and
+                profit_factor>1.3 and
+                max_dd < 12
+        }
+
+    except:
+        return None
+
 
 # ==========================================
 # ENSEMBLE + RISK
@@ -154,9 +211,9 @@ def ensemble_engine(df, days):
         pass
 
     p_xgb = xgb_predict(df, days)
-    p_lstm = lstm_predict(df, days)
+    
 
-    prices = [p for p in [p_linear,p_arima,p_xgb,p_lstm] if p]
+    prices = [p for p in [p_linear,p_arima,p_xgb] if p is not None]
 
     if not prices:
         return None, None, None, {}
@@ -170,7 +227,6 @@ def ensemble_engine(df, days):
 
     return final, stop_loss, target, {
         "xgb": p_xgb,
-        "lstm": p_lstm,
         "linear": p_linear,
         "arima": p_arima
     }
@@ -208,15 +264,13 @@ def resolve_symbol(company_name: str):
 
 # ================= BUY / SELL SIGNAL LOGIC =================
 
-def generate_signal(df, predicted_prices):
+def generate_signal(df, predicted_prices, validation=None):
     try:
         df = df.copy()
 
-        # Use ~8 months data (200 trading days)
-        df = df.tail(200)
-
         # --- TREND ANALYSIS ---
         df['SMA_200'] = df['Close'].rolling(200).mean()
+        df = df.tail(200)
 
         current = float(df['Close'].iloc[-1])
         sma = float(df['SMA_200'].iloc[-1])
@@ -239,22 +293,28 @@ def generate_signal(df, predicted_prices):
         long_vol = df['Volume'].mean()
         recent_vol = df['Volume'].tail(20).mean()
 
-        if recent_vol > 1.1 * long_vol:
-            volume = "STRONG"
+        if recent_vol > 1.05 * long_vol:
+            volume = "SUPPORTIVE"
         elif recent_vol < 0.9 * long_vol:
             volume = "WEAK"
         else:
             volume = "NORMAL"
 
         # --- FINAL DECISION ---
-        if trend == "BULLISH" and prediction == "BULLISH" and volume == "STRONG":
+        if trend == "BULLISH" and prediction == "BULLISH" and volume != "WEAK":
             signal = "BUY"
-        elif trend == "BEARISH" and prediction == "BEARISH" and volume == "WEAK":
+        elif trend == "BEARISH" and prediction == "BEARISH":
             signal = "SELL"
         else:
             signal = "HOLD"
 
-        confidence = round(abs(pred - current) / current, 3)
+        confidence = round(
+            min(abs(pred - current) / current, 0.25), 3
+        )
+
+        # ----- VALIDATION OVERLAY -----
+        if validation and not validation.get("approved", True):
+            signal = "HOLD"
 
         return {
             "signal": signal,
@@ -262,7 +322,10 @@ def generate_signal(df, predicted_prices):
             "reasons": {
                 "trend": trend,
                 "prediction": prediction,
-                "volume": volume
+                "volume": volume,
+                "validation":
+                    "APPROVED" if not validation
+                    else ("APPROVED" if validation.get("approved") else "NOT_PROVEN")
             }
         }
 
@@ -270,7 +333,7 @@ def generate_signal(df, predicted_prices):
         return {
             "signal": "HOLD",
             "confidence": 0,
-            "reasons": {}
+            "reasons": {"error": str(e)}
         }
 
 # ============================================================
@@ -396,7 +459,16 @@ def get_stock_data(
 
      predicted_price = float(lr.predict(future_X)[-1])
 
-     signal_info = generate_signal(daily_df, [predicted_price])
+     # ---- Walk Forward Validation ----
+     validation_info = walk_forward_validation(daily_df, days)
+
+
+     signal_info = generate_signal(
+    daily_df,
+    [predicted_price],
+    validation_info
+)
+
 
 
           # ---- ENSEMBLE + STOP LOSS ----
@@ -444,8 +516,12 @@ def get_stock_data(
     # Momentum adjustment
      ewma_price = base * (1 + momentum * 2)
 
+     # ---- Walk Forward Validation ----
+     validation_info = walk_forward_validation(daily_df, days)
+
+
      # ✅ SIGNAL
-     signal_info = generate_signal(daily_df, [ewma_price])
+     signal_info = generate_signal(daily_df, [ewma_price],validation_info)
 
 
      ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
@@ -483,10 +559,15 @@ def get_stock_data(
 
       arima = ARIMA(series, order=order)
       fit = arima.fit()
-
-      forecast  = float(forecast.iloc[-1])
+       
+      forecast = fit.forecast(steps=days)
+      
       pred = float(forecast.iloc[-1])
-      signal_info = generate_signal(daily_df, [pred])
+
+      # ---- Walk Forward Validation ----
+      validation_info = walk_forward_validation(daily_df, days)
+
+      signal_info = generate_signal(daily_df, [pred],validation_info)
 
       ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
 
@@ -544,8 +625,17 @@ def get_stock_data(
 
       predicted_price = last_price * (1 + forecast.iloc[-1] + mom * 0.5)
 
+      # ---- Walk Forward Validation ----
+      validation_info = walk_forward_validation(daily_df, days)
+
+
       # ✅ SIGNAL
-      signal_info = generate_signal(daily_df, [predicted_price])
+      signal_info = generate_signal(
+    daily_df,
+    [predicted_price],
+    validation_info
+)
+
 
       ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
 
