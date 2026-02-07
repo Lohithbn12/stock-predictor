@@ -484,6 +484,7 @@ def get_stock_data(
       arima = ARIMA(series, order=order)
       fit = arima.fit()
 
+      forecast  = float(forecast.iloc[-1])
       pred = float(forecast.iloc[-1])
       signal_info = generate_signal(daily_df, [pred])
 
