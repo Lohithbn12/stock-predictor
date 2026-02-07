@@ -25,11 +25,21 @@ app.add_middleware(
     allow_origins=[
         "https://stock-predictor-1-72h2.onrender.com",
         "http://localhost:3000",
-        "http://localhost:5173"
+        "http://localhost:5173",
+        "*"   # temporary safety
     ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=[
+        "GET",
+        "POST",
+        "OPTIONS"
+    ],
+    allow_headers=[
+        "*",
+        "Content-Type",
+        "Authorization"
+    ],
+    expose_headers=["*"]
 )
 
 
@@ -1216,7 +1226,7 @@ def get_stock_data(
         0.5 * safety,
     2)
      
-     forecast_path = generate_forecast_path(
+    forecast_path = generate_forecast_path(
     daily_df,
     model.upper(),
     days
