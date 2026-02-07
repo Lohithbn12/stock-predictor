@@ -1219,11 +1219,11 @@ def get_stock_data(
      forecast_acc = arch_risk_eval(acc_df, days)
 
 
-# -------- RELIABILITY SCORE --------
+# ===== SMART RELIABILITY (FIXED) =====
 
     reliability = 0
 
-# For price models only
+# ---- CASE 1: BOTH AVAILABLE ----
     if trading_acc and forecast_acc and model != "ARCH":
 
      reliability = round(
@@ -1231,8 +1231,25 @@ def get_stock_data(
         0.4 * (100 - forecast_acc["MAPE"]),
     2)
 
-# For ARCH use safety style score
-    if trading_acc and model == "ARCH":
+
+# ---- CASE 2: ONLY FORECAST AVAILABLE ----
+    elif forecast_acc and model != "ARCH":
+
+     reliability = round(
+        max(0, 100 - forecast_acc["MAPE"]),
+    2)
+
+
+# ---- CASE 3: ONLY TRADING AVAILABLE ----
+    elif trading_acc:
+
+     reliability = round(
+        trading_acc["win_rate"] * 100,
+    2)
+
+
+# ---- CASE 4: ARCH MODEL ----
+    if model == "ARCH" and forecast_acc:
 
      risk = forecast_acc.get("volatility", 5)
 
@@ -1242,10 +1259,14 @@ def get_stock_data(
         30
     )
 
-     reliability = round(
-        0.5 * (trading_acc["win_rate"] * 100) +
-        0.5 * safety,
-    2)
+     if trading_acc:
+        reliability = round(
+            0.5 * (trading_acc["win_rate"] * 100) +
+            0.5 * safety,
+        2)
+     else:
+        reliability = safety
+
      
     forecast_path = generate_forecast_path(
     daily_df,
