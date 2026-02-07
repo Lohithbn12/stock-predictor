@@ -421,9 +421,13 @@ def generate_forecast_path(df, model, days):
 
         last_price = float(df["Close"].iloc[-1])
 
+        # market characteristics
+        vol = df["Close"].pct_change().std()
+        drift = df["Close"].pct_change().tail(10).mean()
+
         path = []
 
-        # ===== LINEAR PATH =====
+        # ===== LINEAR =====
         if model == "LINEAR":
 
             df["DayIndex"] = np.arange(len(df))
@@ -433,9 +437,11 @@ def generate_forecast_path(df, model, days):
 
             lr = LinearRegression().fit(X,y)
 
-            avg_volume = float(df["Volume"].tail(30).mean())
+            avg_volume = float(df["Volume"].tail(20).mean())
             last_rsi = float(df["rsi"].iloc[-1])
             last_volz = float(df["vol_z"].iloc[-1])
+
+            base_preds = []
 
             for i in range(1, days+1):
 
@@ -446,33 +452,24 @@ def generate_forecast_path(df, model, days):
                     "vol_z": [last_volz]
                 })
 
-                p = float(lr.predict(future)[0])
+                base_preds.append(float(lr.predict(future)[0]))
 
-                path.append({"step": i, "price": round(p,2)})
+            # add realistic dynamics
+            for i,p in enumerate(base_preds):
 
+                noise = np.random.normal(0, vol*last_price*0.3)
 
-        # ===== EWMA PATH =====
-        elif model == "EWMA":
+                momentum = drift * last_price * (i/days)
 
-            momentum = df["return"].tail(5).mean()
+                price = p + noise + momentum
 
-            vol_weight = df["Volume"] / df["Volume"].mean()
-
-            weighted = df["Close"] * vol_weight
-
-            base = weighted.ewm(span=20, adjust=False).mean().iloc[-1]
-
-            target = float(base * (1 + momentum*2))
-
-            for i in range(1, days+1):
-
-                prog = i/days
-                p = last_price + (target-last_price)*prog
-
-                path.append({"step": i, "price": round(p,2)})
+                path.append({
+                    "step": i+1,
+                    "price": round(float(price),2)
+                })
 
 
-        # ===== ARIMA PATH =====
+        # ===== ARIMA =====
         elif model == "ARIMA":
 
             series = df["Close"]
@@ -484,16 +481,50 @@ def generate_forecast_path(df, model, days):
             fc = fit.forecast(steps=days)
 
             for i,v in enumerate(fc):
-                path.append({"step": i+1, "price": round(float(v),2)})
+
+                noise = np.random.normal(0, vol*last_price*0.2)
+
+                path.append({
+                    "step": i+1,
+                    "price": round(float(v+noise),2)
+                })
 
 
-        # ===== ARMA PATH =====
+        # ===== EWMA =====
+        elif model == "EWMA":
+
+            momentum = df["return"].tail(5).mean()
+
+            vol_weight = df["Volume"]/df["Volume"].mean()
+
+            weighted = df["Close"]*vol_weight
+
+            base = weighted.ewm(span=20).mean().iloc[-1]
+
+            target = float(base*(1+momentum*2))
+
+            for i in range(1, days+1):
+
+                prog = i/days
+
+                curve = np.tanh(prog*2)
+
+                noise = np.random.normal(0, vol*last_price*0.25)
+
+                p = last_price + (target-last_price)*curve + noise
+
+                path.append({
+                    "step": i,
+                    "price": round(float(p),2)
+                })
+
+
+        # ===== ARMA =====
         elif model == "ARMA":
 
             series = df["Close"].pct_change().dropna()
 
-            vol = series.std()
-            order = (2,1) if vol<0.025 else (1,1)
+            order = (2,1) if series.std()<0.025 else (1,1)
 
             fit = ARIMA(series, order=(order[0],0,order[1])).fit()
 
@@ -505,24 +536,15 @@ def generate_forecast_path(df, model, days):
 
                 p = last_price*(1+float(v)+mom*0.5)
 
-                path.append({"step": i+1, "price": round(p,2)})
+                noise = np.random.normal(0, vol*last_price*0.25)
+
+                path.append({
+                    "step": i+1,
+                    "price": round(float(p+noise),2)
+                })
 
 
-        # ===== XGB PATH =====
-        elif model == "XGB":
-
-            base = xgb_predict(df, days)
-
-            for i in range(1, days+1):
-
-                prog = i/days
-
-                p = last_price + (base-last_price)*prog
-
-                path.append({"step": i, "price": round(p,2)})
-
-
-        # ===== ARCH PATH (BAND CENTER) =====
+        # ===== ARCH =====
         elif model == "ARCH":
 
             returns = df["Close"].pct_change().dropna()*100
@@ -531,25 +553,24 @@ def generate_forecast_path(df, model, days):
 
             var = fit.forecast(horizon=days).variance.values[-1]
 
-            vol = float(np.sqrt(var).mean())
-
-            upper = last_price*(1+vol/100)
-            lower = last_price*(1-vol/100)
-
-            mid = (upper+lower)/2
+            sigma = np.sqrt(var).mean()/100
 
             for i in range(1, days+1):
 
-                prog = i/days
+                shock = np.random.normal(0, sigma*last_price)
 
-                p = last_price + (mid-last_price)*prog
+                p = last_price*(1+drift*i/days) + shock
 
-                path.append({"step": i, "price": round(p,2)})
+                path.append({
+                    "step": i,
+                    "price": round(float(p),2)
+                })
 
 
         return path
 
-    except:
+    except Exception as e:
+        print("PATH ERROR:", e)
         return []
 
 
