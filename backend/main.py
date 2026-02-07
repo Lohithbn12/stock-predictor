@@ -210,6 +210,76 @@ def resolve_symbol(company_name: str):
     return results[0].get("symbol")
 
 
+# ================= BUY / SELL SIGNAL LOGIC =================
+
+def generate_signal(df, predicted_prices):
+    try:
+        df = df.copy()
+
+        # Use ~8 months data (200 trading days)
+        df = df.tail(200)
+
+        # --- TREND ANALYSIS ---
+        df['SMA_200'] = df['Close'].rolling(200).mean()
+
+        current = float(df['Close'].iloc[-1])
+        sma = float(df['SMA_200'].iloc[-1])
+
+        # Linear slope
+        y = df['Close'].values.reshape(-1,1)
+        x = np.arange(len(y)).reshape(-1,1)
+
+        lr = LinearRegression()
+        lr.fit(x, y)
+        slope = lr.coef_[0][0]
+
+        trend = "BULLISH" if slope > 0 and current > sma else "BEARISH"
+
+        # --- PREDICTION ANALYSIS ---
+        pred = float(predicted_prices[-1])
+        prediction = "BULLISH" if pred > current else "BEARISH"
+
+        # --- VOLUME ANALYSIS ---
+        long_vol = df['Volume'].mean()
+        recent_vol = df['Volume'].tail(20).mean()
+
+        if recent_vol > 1.1 * long_vol:
+            volume = "STRONG"
+        elif recent_vol < 0.9 * long_vol:
+            volume = "WEAK"
+        else:
+            volume = "NORMAL"
+
+        # --- FINAL DECISION ---
+        if trend == "BULLISH" and prediction == "BULLISH" and volume == "STRONG":
+            signal = "BUY"
+        elif trend == "BEARISH" and prediction == "BEARISH" and volume == "WEAK":
+            signal = "SELL"
+        else:
+            signal = "HOLD"
+
+        confidence = round(abs(pred - current) / current, 3)
+
+        return {
+            "signal": signal,
+            "confidence": confidence,
+            "reasons": {
+                "trend": trend,
+                "prediction": prediction,
+                "volume": volume
+            }
+        }
+
+    except Exception as e:
+        return {
+            "signal": "HOLD",
+            "confidence": 0,
+            "reasons": {}
+        }
+
+# ============================================================
+
+
 # -----------------------------
 # API Endpoint
 # -----------------------------
@@ -322,6 +392,9 @@ def get_stock_data(
      })
 
      predicted_price = float(lr.predict(future_X)[-1])
+
+     signal_info = generate_signal(daily_df, [predicted_price])
+
 
           # ---- ENSEMBLE + STOP LOSS ----
      ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
@@ -662,6 +735,7 @@ def get_stock_data(
         "prediction_days": days,
         "last_close": last_close,
         "prediction": prediction_result,
+        "signal": signal_info,
 
         # ✅ FRONTEND CRITICAL
         "hourly_prices": hourly_prices,

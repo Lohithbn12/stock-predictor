@@ -62,9 +62,9 @@ function StockPage() {
           i * 24 * 60 * 60 * 1000
         ),
         Close:
-    data.prediction?.ensemble_price ??
-    data.prediction?.expected_price ??
-    data.last_close
+          data.prediction?.ensemble_price ??
+          data.prediction?.expected_price ??
+          data.last_close
 
 
       });
@@ -266,6 +266,57 @@ function StockPage() {
 
           <h3>Hourly Price Trend</h3>
           <div className="chart-container">
+
+            {/* ================= BUY / SELL SIGNAL ================= */}
+
+            {data && data.signal && (
+              <div className="signal-container">
+
+                <div className="buttons">
+                  <button
+                    className={
+                      data.signal.signal === "BUY"
+                        ? "buy active"
+                        : "buy"
+                    }
+                  >
+                    BUY
+                  </button>
+
+                  <button
+                    className={
+                      data.signal.signal === "SELL"
+                        ? "sell active"
+                        : "sell"
+                    }
+                  >
+                    SELL
+                  </button>
+
+                  <button
+                    className={
+                      data.signal.signal === "HOLD"
+                        ? "hold active"
+                        : "hold"
+                    }
+                  >
+                    HOLD
+                  </button>
+                </div>
+
+                <div className="signal-info">
+                  <b>Confidence:</b> {data.signal.confidence}
+
+                  <div className="reasons">
+                    Trend: {data.signal.reasons?.trend} |
+                    Prediction: {data.signal.reasons?.prediction} |
+                    Volume: {data.signal.reasons?.volume}
+                  </div>
+                </div>
+
+              </div>
+            )}
+
             <HourlyPriceChart
               prices={data.hourly_prices}
               overlay={showOverlay ? overlayData : null}
