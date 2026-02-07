@@ -27,7 +27,7 @@ app = FastAPI(title="Stock Predictor API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # 👈 TEMP / SAFE FIX
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -291,6 +291,13 @@ def get_stock_data(
     if not symbol:
         return {"error": "Stock not found"}
 
+    # ================= SAFE DEFAULT =================
+    signal_info = {
+        "signal": "HOLD",
+        "confidence": 0,
+        "reasons": {}
+    }
+
     # ==================================================
     # 1️⃣ CHART DATA – SMART INTERVAL SWITCH
     # ==================================================
@@ -437,6 +444,10 @@ def get_stock_data(
     # Momentum adjustment
      ewma_price = base * (1 + momentum * 2)
 
+     # ✅ SIGNAL
+     signal_info = generate_signal(daily_df, [ewma_price])
+
+
      ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
 
 
@@ -473,7 +484,8 @@ def get_stock_data(
       arima = ARIMA(series, order=order)
       fit = arima.fit()
 
-      forecast = fit.forecast(steps=days)
+      pred = float(forecast.iloc[-1])
+      signal_info = generate_signal(daily_df, [pred])
 
       ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
 
@@ -531,6 +543,9 @@ def get_stock_data(
 
       predicted_price = last_price * (1 + forecast.iloc[-1] + mom * 0.5)
 
+      # ✅ SIGNAL
+      signal_info = generate_signal(daily_df, [predicted_price])
+
       ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
 
 
@@ -582,6 +597,17 @@ def get_stock_data(
      lower = last * (1 - vol/100)
 
      ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
+
+     # ✅ ADD THIS — ARCH HAS NO DIRECTION
+     signal_info = {
+        "signal": "HOLD",
+        "confidence": 0,
+        "reasons": {
+            "trend": "N/A",
+            "prediction": "N/A",
+            "volume": "N/A"
+        }
+      }
 
 
      prediction_result = {
