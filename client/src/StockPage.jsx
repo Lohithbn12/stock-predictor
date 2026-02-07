@@ -46,8 +46,7 @@ function StockPage() {
   };
 
   // ============= OVERLAY FUNCTION (NEW) =================
-  // ============= OVERLAY FUNCTION (UPDATED) =================
-const fetchOverlay = () => {
+ const fetchOverlay = () => {
 
   if (!data?.hourly_prices) return;
 
@@ -57,76 +56,63 @@ const fetchOverlay = () => {
   const baseDate =
     lastPoint.Datetime || lastPoint.Date;
 
-  const startPrice = data.last_close;
+  let future = [];
 
-  // ========================================================
-  // 1) IF BACKEND GIVES FORECAST PATH → USE REAL MODEL CURVE
-  // ========================================================
+  // =================== REAL FIX ===================
+
+  // 1️⃣ IF BACKEND PROVIDED PATH → USE IT
   if (data.forecast_path && data.forecast_path.length > 0) {
 
-    const future = data.forecast_path.map(p => ({
-
+    future = data.forecast_path.map((p, i) => ({
       Datetime: new Date(
         new Date(baseDate).getTime() +
-        p.step * 24 * 60 * 60 * 1000
+        (i + 1) * 24 * 60 * 60 * 1000
       ),
-
       Close: p.price
     }));
 
-    setOverlayData([
-      ...data.hourly_prices,
-      ...future
-    ]);
-
-    setShowOverlay(true);
-    return;
   }
 
-  // ========================================================
-  // 2) FALLBACK → SMART CURVE (OLD LOGIC)
-  // ========================================================
+  // 2️⃣ FALLBACK ONLY IF PATH MISSING
+  else {
 
-  const target =
-    data.prediction?.ensemble_price ??
-    data.prediction?.expected_price ??
-    data.last_close;
+    const startPrice = data.last_close;
 
-  const future = [];
+    const target =
+      data.prediction?.ensemble_price ??
+      data.prediction?.expected_price ??
+      data.last_close;
 
-  for (let i = 1; i <= days; i++) {
+    for (let i = 1; i <= days; i++) {
 
-    const progress = i / days;
+      const progress = i / days;
+      const curve = Math.pow(progress, 1.2);
 
-    // smooth curve shape
-    const curve = Math.pow(progress, 1.2);
-
-    // tiny volatility noise
-    const noise =
-      (Math.random() - 0.5) *
-      startPrice * 0.002;
-
-    const price =
-      startPrice +
-      (target - startPrice) * curve +
-      noise;
-
-    future.push({
-      Datetime: new Date(
-        new Date(baseDate).getTime() +
-        i * 24 * 60 * 60 * 1000
-      ),
-      Close: Number(price.toFixed(2))
-    });
+      future.push({
+        Datetime: new Date(
+          new Date(baseDate).getTime() +
+          i * 24 * 60 * 60 * 1000
+        ),
+        Close: Number(
+          (startPrice +
+          (target - startPrice) * curve
+          ).toFixed(2)
+        )
+      });
+    }
   }
 
-  setOverlayData([
+  // =================================================
+
+  const combined = [
     ...data.hourly_prices,
     ...future
-  ]);
+  ];
 
+  setOverlayData(combined);
   setShowOverlay(true);
 };
+
 
 
 
