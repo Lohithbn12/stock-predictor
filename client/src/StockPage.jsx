@@ -46,72 +46,72 @@ function StockPage() {
   };
 
   // ============= OVERLAY FUNCTION (NEW) =================
- const fetchOverlay = () => {
+  const fetchOverlay = () => {
 
-  if (!data?.hourly_prices) return;
+    if (!data?.hourly_prices) return;
 
-  const lastPoint =
-    data.hourly_prices[data.hourly_prices.length - 1];
+    const lastPoint =
+      data.hourly_prices[data.hourly_prices.length - 1];
 
-  const baseDate =
-    lastPoint.Datetime || lastPoint.Date;
+    const baseDate =
+      lastPoint.Datetime || lastPoint.Date;
 
-  let future = [];
+    let future = [];
 
-  // =================== REAL FIX ===================
+    // =================== REAL FIX ===================
 
-  // 1️⃣ IF BACKEND PROVIDED PATH → USE IT
-  if (data.forecast_path && data.forecast_path.length > 0) {
+    // 1️⃣ IF BACKEND PROVIDED PATH → USE IT
+    if (data.forecast_path && data.forecast_path.length > 0) {
 
-    future = data.forecast_path.map((p, i) => ({
-      Datetime: new Date(
-        new Date(baseDate).getTime() +
-        (i + 1) * 24 * 60 * 60 * 1000
-      ),
-      Close: p.price
-    }));
-
-  }
-
-  // 2️⃣ FALLBACK ONLY IF PATH MISSING
-  else {
-
-    const startPrice = data.last_close;
-
-    const target =
-      data.prediction?.ensemble_price ??
-      data.prediction?.expected_price ??
-      data.last_close;
-
-    for (let i = 1; i <= days; i++) {
-
-      const progress = i / days;
-      const curve = Math.pow(progress, 1.2);
-
-      future.push({
+      future = data.forecast_path.map((p, i) => ({
         Datetime: new Date(
           new Date(baseDate).getTime() +
-          i * 24 * 60 * 60 * 1000
+          (i + 1) * 24 * 60 * 60 * 1000
         ),
-        Close: Number(
-          (startPrice +
-          (target - startPrice) * curve
-          ).toFixed(2)
-        )
-      });
+        Close: p.price
+      }));
+
     }
-  }
 
-  // =================================================
+    // 2️⃣ FALLBACK ONLY IF PATH MISSING
+    else {
 
-  const combined = [
-    ...data.hourly_prices,
-    ...future
-  ];
+      const startPrice = data.last_close;
 
-  setOverlayData(combined);
-  setShowOverlay(true);
-};
+      const target =
+        data.prediction?.ensemble_price ??
+        data.prediction?.expected_price ??
+        data.last_close;
+
+      for (let i = 1; i <= days; i++) {
+
+        const progress = i / days;
+        const curve = Math.pow(progress, 1.2);
+
+        future.push({
+          Datetime: new Date(
+            new Date(baseDate).getTime() +
+            i * 24 * 60 * 60 * 1000
+          ),
+          Close: Number(
+            (startPrice +
+              (target - startPrice) * curve
+            ).toFixed(2)
+          )
+        });
+      }
+    }
+
+    // =================================================
+
+    const combined = [
+      ...data.hourly_prices,
+      ...future
+    ];
+
+    setOverlayData(combined);
+    setShowOverlay(true);
+  };
 
 
 
@@ -265,6 +265,124 @@ function StockPage() {
             )}
             {/* ========================= */}
           </div>
+
+          {/* ================= ACCURACY SECTION (COLORED) ================= */}
+
+          {data.accuracy && (
+            <div style={{
+              marginTop: "12px",
+              padding: "12px",
+              border: "1px solid #ddd",
+              borderRadius: "10px",
+              background: "#f9fafb"
+            }}>
+
+              <h3>📊 Model Accuracy & Trust</h3>
+
+              {/* ----- COLOR LOGIC ----- */}
+              {(() => {
+                const score = data.accuracy.reliability_score || 0;
+
+                let color =
+                  score >= 65 ? "#16a34a" :
+                    score >= 45 ? "#ea580c" :
+                      "#dc2626";
+
+                let label =
+                  score >= 65 ? "TRUSTABLE" :
+                    score >= 45 ? "USE WITH CAUTION" :
+                      "NOT RELIABLE";
+
+                return (
+                  <div style={{
+                    padding: "8px",
+                    marginBottom: "10px",
+                    borderRadius: "8px",
+                    background: color + "15",
+                    border: `1px solid ${color}`
+                  }}>
+
+                    <b style={{ color }}>
+                      {label}
+                    </b>
+
+                    <span style={{ marginLeft: "10px" }}>
+                      Score: {score}
+                    </span>
+
+                  </div>
+                );
+              })()}
+
+
+              <div style={{
+                display: "flex",
+                gap: "10px",
+                flexWrap: "wrap"
+              }}>
+
+                {/* ---- RELIABILITY ---- */}
+                <div className="stat-box">
+                  <span>Reliability Score</span>
+                  <b>{data.accuracy.reliability_score ?? "N/A"}</b>
+                </div>
+
+
+                {/* ---- TRADING ---- */}
+                {data.accuracy.trading && (
+                  <>
+                    <div className="stat-box">
+                      <span>Win Rate</span>
+                      <b>
+                        {(data.accuracy.trading.win_rate * 100).toFixed(1)}%
+                      </b>
+                    </div>
+
+                    <div className="stat-box">
+                      <span>Profit Factor</span>
+                      <b>{data.accuracy.trading.profit_factor}</b>
+                    </div>
+
+                    <div className="stat-box">
+                      <span>Max Drawdown</span>
+                      <b>{data.accuracy.trading.max_drawdown}</b>
+                    </div>
+                  </>
+                )}
+
+
+                {/* ---- FORECAST ---- */}
+                {data.accuracy.forecast &&
+                  data.prediction.model !== "ARCH (Volatility)" && (
+                    <>
+                      <div className="stat-box">
+                        <span>MAPE</span>
+                        <b>{data.accuracy.forecast.MAPE}%</b>
+                      </div>
+
+                      <div className="stat-box">
+                        <span>MAE</span>
+                        <b>{data.accuracy.forecast.MAE}</b>
+                      </div>
+                    </>
+                  )}
+
+
+                {/* ---- ARCH ---- */}
+                {data.prediction.model === "ARCH (Volatility)" &&
+                  data.accuracy.forecast && (
+                    <div className="stat-box">
+                      <span>Risk Level</span>
+                      <b>{data.accuracy.forecast.risk_level}</b>
+                    </div>
+                  )}
+
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================= */}
+
 
           {/* ✅ NEW COMPARISON SECTION */}
           {data.prediction.comparison && (
