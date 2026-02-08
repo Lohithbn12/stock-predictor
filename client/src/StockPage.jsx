@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import HourlyPriceChart from "./HourlyPriceChart";
 import Last4WeeksTable from "./Last4WeeksTable";
+import StockListPage from "./StockListPage";
 import "./App.css";
 
 const API_URL = "https://stock-predictor-0zst.onrender.com";
@@ -17,6 +18,8 @@ function StockPage() {
   // ✅ NEW STATE (ONLY ADDITION)
   const [showExplain, setShowExplain] = useState(false);
 
+  
+
   // =================== ONLY ADDITIONS ===================
   const [showOverlay, setShowOverlay] = useState(false);
   const [overlayData, setOverlayData] = useState([]);
@@ -27,6 +30,11 @@ function StockPage() {
   const [filteredStocks, setFilteredStocks] = useState([]);
   const [showPredictionPanel, setShowPredictionPanel] = useState(false);
   // ================================================
+
+  // ===== NEW FOR PAGE NAVIGATION =====
+  const [showMenu, setShowMenu] = useState(false);
+  const [listPage, setListPage] = useState(null);
+
 
   // ============= NEW SIDEBAR FUNCTION =============
 const fetchStocksByPrice = async (maxPrice) => {
@@ -165,51 +173,64 @@ const selectStockFromSidebar = (symbol) => {
   }, [chartRange]);
   // ===================================================
 
+  // ========== NEW PAGE SWITCH ==========
+if (listPage) {
+  return (
+    <StockListPage
+      maxPrice={listPage}
+      onSelect={(sym) => {
+        setCompany(sym);
+        setListPage(null);
+        fetchStockData();
+      }}
+      onBack={() => setListPage(null)}
+    />
+  );
+}
+
+
   return (
     // ===================== ADDED WRAPPER FOR SIDEBAR =====================
   <div style={{ display: "flex" }}>
 
-    {/* ===================== NEW SIDEBAR ===================== */}
-    <div style={{
-      width: "260px",
-      borderRight: "1px solid #ddd",
-      padding: "10px",
-      background: "#f9fafb"
-    }}>
+    {/* ===== 3 DOT MENU BUTTON ===== */}
+<button
+  style={{
+    position: "fixed",
+    left: 10,
+    top: 10,
+    zIndex: 999
+  }}
+  onClick={() => setShowMenu(!showMenu)}
+>
+  ⋮
+</button>
 
-      <h3>Stock Categories</h3>
+{/* ===== TOGGLE SIDEBAR ===== */}
+{showMenu && (
+<div style={{
+  width: "260px",
+  borderRight: "1px solid #ddd",
+  padding: "10px",
+  background: "#f9fafb"
+}}>
 
-      <button onClick={() => fetchStocksByPrice(50)}>
-        Stocks under ₹50
-      </button>
+  <h3>Stock Categories</h3>
 
-      <button onClick={() => fetchStocksByPrice(100)}>
-        Stocks under ₹100
-      </button>
+  <button onClick={() => setListPage(50)}>
+    Stocks under ₹50
+  </button>
 
-      <button onClick={() => fetchStocksByPrice(1000)}>
-        Stocks under ₹1000
-      </button>
+  <button onClick={() => setListPage(100)}>
+    Stocks under ₹100
+  </button>
 
-      <div style={{ marginTop: "10px" }}>
-        {filteredStocks.map((s, i) => (
-          <div
-            key={i}
-            style={{
-              cursor: "pointer",
-              padding: "6px",
-              borderBottom: "1px solid #eee"
-            }}
-            onClick={() => selectStockFromSidebar(s.symbol)}
-          >
-            {s.symbol} – ₹{s.price}
-          </div>
-        ))}
-      </div>
+  <button onClick={() => setListPage(1000)}>
+    Stocks under ₹1000
+  </button>
 
-    </div>
-
-    {/* ============== YOUR EXISTING PAGE START =============== */}
+</div>
+)}
 
 {/* ============== YOUR EXISTING PAGE START =============== */}
   <div className="page" style={{ flex: 1 }}>

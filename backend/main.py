@@ -1306,17 +1306,25 @@ def get_stock_data(
 def stocks_by_price(max: float = Query(..., ge=1)):
 
     try:
-        # Popular India stocks universe (safe static list)
-        symbols = [
-            "IDEA.NS","SUZLON.NS","YESBANK.NS","ZOMATO.NS",
-            "TATAPOWER.NS","IRFC.NS","RVNL.NS","SOUTHBANK.NS",
-            "PNB.NS","SAIL.NS","IDFCFIRSTB.NS","UCOBANK.NS",
-            "NHPC.NS","BHEL.NS","RPOWER.NS","BANKBARODA.NS",
-            "GMRINFRA.NS","HUDCO.NS","IOC.NS","ONGC.NS",
-            "ITC.NS","TATASTEEL.NS","WIPRO.NS","INFY.NS",
-            "HDFCBANK.NS","RELIANCE.NS"
-        ]
+        # ====================================================
+        # 1️⃣ GET ALL NSE SYMBOLS DYNAMICALLY
+        # ====================================================
+        try:
+            nse = pd.read_csv(
+                "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
+            )
 
+            symbols = [s + ".NS" for s in nse["SYMBOL"].tolist()]
+
+        except Exception as e:
+            return {
+                "stocks": [],
+                "error": "Failed to load NSE universe: " + str(e)
+            }
+
+        # ====================================================
+        # 2️⃣ FETCH PRICES
+        # ====================================================
         result = []
 
         for s in symbols:
@@ -1345,7 +1353,6 @@ def stocks_by_price(max: float = Query(..., ge=1)):
 
             except:
                 continue
-
 
         result = sorted(result, key=lambda x: x["price"])
 
