@@ -1305,52 +1305,56 @@ def get_stock_data(
 @app.get("/stocks-by-price")
 def stocks_by_price(max: float = Query(100, ge=1)):
 
-
     try:
-        # ====================================================
-        # 1️⃣ GET ALL NSE SYMBOLS DYNAMICALLY
-        # ====================================================
-        try:
-            nse = pd.read_csv(
-                "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
-            )
+        # ===========================================
+        # 1️⃣ SAFE SYMBOL SOURCE (NO NSE BLOCK)
+        # ===========================================
 
-            symbols = [s + ".NS" for s in nse["SYMBOL"].tolist()]
+        # Public mirror of NIFTY 500 symbols
+        url = "https://raw.githubusercontent.com/datasets/nifty-500/master/data/nifty-500.csv"
 
-        except Exception as e:
-            return {
-                "stocks": [],
-                "error": "Failed to load NSE universe: " + str(e)
-            }
+        nse = pd.read_csv(url)
 
-        # ====================================================
-        # 2️⃣ FETCH PRICES
-        # ====================================================
+        symbols = [s + ".NS" for s in nse["Symbol"].tolist()]
+
         result = []
 
-        for s in symbols:
+        # ===========================================
+        # 2️⃣ BATCH FETCH (FAST + SAFE)
+        # ===========================================
+
+        for chunk in [symbols[i:i+50] for i in range(0, len(symbols), 50)]:
 
             try:
-                df = yf.download(
-                    s,
+                data = yf.download(
+                    tickers=chunk,
                     period="5d",
                     interval="1d",
+                    group_by="ticker",
                     progress=False
                 )
 
-                if df.empty:
-                    continue
+                for s in chunk:
 
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
+                    try:
+                        df = data[s]
 
-                price = float(df["Close"].iloc[-1])
+                        if df.empty:
+                            continue
 
-                if price <= max:
-                    result.append({
-                        "symbol": s.replace(".NS",""),
-                        "price": round(price,2)
-                    })
+                        if isinstance(df.columns, pd.MultiIndex):
+                            df.columns = df.columns.get_level_values(0)
+
+                        price = float(df["Close"].iloc[-1])
+
+                        if price <= max:
+                            result.append({
+                                "symbol": s.replace(".NS", ""),
+                                "price": round(price, 2)
+                            })
+
+                    except:
+                        continue
 
             except:
                 continue
@@ -1358,7 +1362,8 @@ def stocks_by_price(max: float = Query(100, ge=1)):
         result = sorted(result, key=lambda x: x["price"])
 
         return {
-            "stocks": result
+            "stocks": result,
+            "count": len(result)
         }
 
     except Exception as e:
