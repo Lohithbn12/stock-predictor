@@ -46,7 +46,11 @@ const fetchStocksByPrice = async (maxPrice) => {
   setPriceFilter(maxPrice);
 
   try {
-    const res = await fetch(`${API_URL}/stocks-by-price?max=${maxPrice}`);
+    if (!maxPrice) return;
+
+const res = await fetch(
+  `${API_URL}/stocks-by-price?max=${Number(maxPrice)}`
+);
 
     if (!res.ok) throw new Error("Failed");
 

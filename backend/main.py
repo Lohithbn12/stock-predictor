@@ -1303,7 +1303,8 @@ def get_stock_data(
 # ==========================================================
 
 @app.get("/stocks-by-price")
-def stocks_by_price(max: float = Query(..., ge=1)):
+def stocks_by_price(max: float = Query(100, ge=1)):
+
 
     try:
         # ====================================================
