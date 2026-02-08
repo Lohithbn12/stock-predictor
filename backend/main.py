@@ -1295,3 +1295,66 @@ def get_stock_data(
         "hourly_prices": hourly_prices,
         "last_4_weeks": last_4_weeks
     }
+
+
+# ==========================================================
+#  NEW ENDPOINT – STOCKS BY PRICE (FOR SIDEBAR)
+#  ➜ PURE ADDITION – DOES NOT TOUCH EXISTING LOGIC
+# ==========================================================
+
+@app.get("/stocks-by-price")
+def stocks_by_price(max: float = Query(..., ge=1)):
+
+    try:
+        # Popular India stocks universe (safe static list)
+        symbols = [
+            "IDEA.NS","SUZLON.NS","YESBANK.NS","ZOMATO.NS",
+            "TATAPOWER.NS","IRFC.NS","RVNL.NS","SOUTHBANK.NS",
+            "PNB.NS","SAIL.NS","IDFCFIRSTB.NS","UCOBANK.NS",
+            "NHPC.NS","BHEL.NS","RPOWER.NS","BANKBARODA.NS",
+            "GMRINFRA.NS","HUDCO.NS","IOC.NS","ONGC.NS",
+            "ITC.NS","TATASTEEL.NS","WIPRO.NS","INFY.NS",
+            "HDFCBANK.NS","RELIANCE.NS"
+        ]
+
+        result = []
+
+        for s in symbols:
+
+            try:
+                df = yf.download(
+                    s,
+                    period="5d",
+                    interval="1d",
+                    progress=False
+                )
+
+                if df.empty:
+                    continue
+
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+
+                price = float(df["Close"].iloc[-1])
+
+                if price <= max:
+                    result.append({
+                        "symbol": s.replace(".NS",""),
+                        "price": round(price,2)
+                    })
+
+            except:
+                continue
+
+
+        result = sorted(result, key=lambda x: x["price"])
+
+        return {
+            "stocks": result
+        }
+
+    except Exception as e:
+        return {
+            "stocks": [],
+            "error": str(e)
+        }

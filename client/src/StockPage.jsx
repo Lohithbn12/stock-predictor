@@ -22,6 +22,41 @@ function StockPage() {
   const [overlayData, setOverlayData] = useState([]);
   // ======================================================
 
+  // ============= SIDEBAR ADDITIONS =================
+  const [priceFilter, setPriceFilter] = useState(null);
+  const [filteredStocks, setFilteredStocks] = useState([]);
+  const [showPredictionPanel, setShowPredictionPanel] = useState(false);
+  // ================================================
+
+  // ============= NEW SIDEBAR FUNCTION =============
+const fetchStocksByPrice = async (maxPrice) => {
+
+  setPriceFilter(maxPrice);
+
+  try {
+    const res = await fetch(`${API_URL}/stocks-by-price?max=${maxPrice}`);
+
+    if (!res.ok) throw new Error("Failed");
+
+    const json = await res.json();
+
+    setFilteredStocks(json.stocks || []);
+
+  } catch (err) {
+    console.log(err);
+  }
+};
+// ================================================
+
+
+const selectStockFromSidebar = (symbol) => {
+  setCompany(symbol);
+  setTimeout(() => {
+    fetchStockData();   // USING YOUR EXISTING FUNCTION
+  }, 100);
+};
+
+
   const fetchStockData = async () => {
     if (!company || !days) return;
 
@@ -131,7 +166,53 @@ function StockPage() {
   // ===================================================
 
   return (
-    <div className="page">
+    // ===================== ADDED WRAPPER FOR SIDEBAR =====================
+  <div style={{ display: "flex" }}>
+
+    {/* ===================== NEW SIDEBAR ===================== */}
+    <div style={{
+      width: "260px",
+      borderRight: "1px solid #ddd",
+      padding: "10px",
+      background: "#f9fafb"
+    }}>
+
+      <h3>Stock Categories</h3>
+
+      <button onClick={() => fetchStocksByPrice(50)}>
+        Stocks under ₹50
+      </button>
+
+      <button onClick={() => fetchStocksByPrice(100)}>
+        Stocks under ₹100
+      </button>
+
+      <button onClick={() => fetchStocksByPrice(1000)}>
+        Stocks under ₹1000
+      </button>
+
+      <div style={{ marginTop: "10px" }}>
+        {filteredStocks.map((s, i) => (
+          <div
+            key={i}
+            style={{
+              cursor: "pointer",
+              padding: "6px",
+              borderBottom: "1px solid #eee"
+            }}
+            onClick={() => selectStockFromSidebar(s.symbol)}
+          >
+            {s.symbol} – ₹{s.price}
+          </div>
+        ))}
+      </div>
+
+    </div>
+
+    {/* ============== YOUR EXISTING PAGE START =============== */}
+
+{/* ============== YOUR EXISTING PAGE START =============== */}
+  <div className="page" style={{ flex: 1 }}>
       {/* SEARCH CARD */}
       <div className="card" style={{ position: "relative" }}>
         <h1>📈 Stock Predictor</h1>
@@ -184,6 +265,30 @@ function StockPage() {
           </button>
           {/* ======================================= */}
         </div>
+
+         {/* ========== MODEL AFTER PREDICTION CLICK ========== */}
+        {showPredictionPanel && (
+          <div style={{ marginTop: "10px" }}>
+
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            >
+              <option value="Linear">Linear Regression</option>
+              <option value="EWMA">EWMA</option>
+              <option value="ARIMA">ARIMA</option>
+              <option value="ARMA">ARMA</option>
+              <option value="ARCH">ARCH</option>
+            </select>
+
+            <button onClick={fetchStockData}>
+              Run Prediction
+            </button>
+
+          </div>
+        )}
+        {/* ================================================== */}
+
 
         {loading && <p className="info">Loading...</p>}
         {error && <p className="error">{error}</p>}
@@ -611,6 +716,8 @@ function StockPage() {
 
       )}
     </div>
+    </div>      
+           
   );
 }
 
