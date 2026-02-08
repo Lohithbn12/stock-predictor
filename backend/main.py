@@ -1302,36 +1302,85 @@ def get_stock_data(
 #  ➜ PURE ADDITION – DOES NOT TOUCH EXISTING LOGIC
 # ==========================================================
 
+# ==========================================================
+#  NEW ENDPOINT – STOCKS BY PRICE USING YOUR NSE CSV + YFINANCE
+# ==========================================================
+
+import os
+
+NSE_CSV_PATH = r"C:\Users\lohithlikith\Downloads\EQUITY_L.csv"
+
 @app.get("/stocks-by-price")
 def stocks_by_price(max: float = Query(100, ge=1)):
 
     try:
-        from nsepython import nse_eq_symbols, nse_eq
+        # --------------------------------------------------
+        # 1️⃣ READ YOUR OFFICIAL NSE SYMBOL LIST
+        # --------------------------------------------------
+        if not os.path.exists(NSE_CSV_PATH):
+            return {
+                "stocks": [],
+                "error": f"CSV NOT FOUND at {NSE_CSV_PATH}"
+            }
+
+        df = pd.read_csv(NSE_CSV_PATH)
+
+        if "SYMBOL" not in df.columns:
+            return {
+                "stocks": [],
+                "error": "SYMBOL column not found in CSV"
+            }
+
+        symbols = df["SYMBOL"].dropna().unique().tolist()
+
+        # Convert to yfinance format
+        tickers = [s + ".NS" for s in symbols]
 
         result = []
 
-        # 1️⃣ Get ALL NSE equity symbols
-        symbols = nse_eq_symbols()
-
-        # 2️⃣ Check price for each
-        for sym in symbols:
+        # --------------------------------------------------
+        # 2️⃣ FETCH PRICES VIA YFINANCE (BATCH MODE)
+        # --------------------------------------------------
+        for chunk in [tickers[i:i+40] for i in range(0, len(tickers), 40)]:
 
             try:
-                data = nse_eq(sym)
+                data = yf.download(
+                    tickers=chunk,
+                    period="5d",
+                    interval="1d",
+                    group_by="ticker",
+                    progress=False
+                )
 
-                price = float(data.get("priceInfo", {}).get("lastPrice", 0))
+                for s in chunk:
+                    try:
+                        dfp = data[s]
 
-                if price and price <= max:
-                    result.append({
-                        "symbol": sym,
-                        "price": round(price, 2)
-                    })
+                        if dfp.empty:
+                            continue
+
+                        if isinstance(dfp.columns, pd.MultiIndex):
+                            dfp.columns = dfp.columns.get_level_values(0)
+
+                        price = float(dfp["Close"].iloc[-1])
+
+                        if price <= max:
+                            clean = s.replace(".NS", "")
+
+                            result.append({
+                                "symbol": clean,
+                                "price": round(price, 2)
+                            })
+
+                    except:
+                        continue
 
             except:
                 continue
 
-
-        # 3️⃣ Sort & take TOP 50
+        # --------------------------------------------------
+        # 3️⃣ SORT & LIMIT TOP 50
+        # --------------------------------------------------
         result = sorted(result, key=lambda x: x["price"])[:50]
 
         return {
