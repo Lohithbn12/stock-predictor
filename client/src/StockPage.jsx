@@ -14,6 +14,9 @@ function StockPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // ===== NEW LOADING FOR LIST PAGE =====
+const [listLoading, setListLoading] = useState(false);
+
 
   // ✅ NEW STATE (ONLY ADDITION)
   const [showExplain, setShowExplain] = useState(false);
@@ -39,6 +42,7 @@ function StockPage() {
   // ============= NEW SIDEBAR FUNCTION =============
 const fetchStocksByPrice = async (maxPrice) => {
 
+  setListLoading(true);
   setPriceFilter(maxPrice);
 
   try {
@@ -50,10 +54,16 @@ const fetchStocksByPrice = async (maxPrice) => {
 
     setFilteredStocks(json.stocks || []);
 
+    // OPEN NEW PAGE AFTER LOAD
+    setListPage(maxPrice);
+
   } catch (err) {
     console.log(err);
   }
+
+  setListLoading(false);
 };
+
 // ================================================
 
 
@@ -216,18 +226,24 @@ if (listPage) {
 }}>
 
   <h3>Stock Categories</h3>
+  {listLoading && (
+  <div style={{ padding: "10px", color: "#2563eb" }}>
+    Loading stocks...
+  </div>
+)}
 
-  <button onClick={() => setListPage(50)}>
-    Stocks under ₹50
-  </button>
+  <button onClick={() => fetchStocksByPrice(50)}>
+  Stocks under ₹50
+</button>
 
-  <button onClick={() => setListPage(100)}>
-    Stocks under ₹100
-  </button>
+<button onClick={() => fetchStocksByPrice(100)}>
+  Stocks under ₹100
+</button>
 
-  <button onClick={() => setListPage(1000)}>
-    Stocks under ₹1000
-  </button>
+<button onClick={() => fetchStocksByPrice(1000)}>
+  Stocks under ₹1000
+</button>
+
 
 </div>
 )}

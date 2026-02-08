@@ -1,48 +1,85 @@
 import { useEffect, useState } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
 const API_URL = "https://stock-predictor-0zst.onrender.com";
 
-function StockListPage({ maxPrice, onSelect, onBack }) {
+function StocksListPage() {
+
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+
+  const max = params.get("max");
 
   const [stocks, setStocks] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+
     const load = async () => {
-      const res = await fetch(`${API_URL}/stocks-by-price?max=${maxPrice}`);
-      const json = await res.json();
-      setStocks(json.stocks || []);
+
+      setLoading(true);
+
+      try {
+        const res = await fetch(`${API_URL}/stocks-by-price?max=${max}`);
+        const json = await res.json();
+
+        setStocks(json.stocks || []);
+
+      } catch (e) {
+        console.log(e);
+      }
+
+      setLoading(false);
     };
 
     load();
-  }, [maxPrice]);
+
+  }, [max]);
+
+
+  const openStock = (symbol) => {
+    navigate(`/?symbol=${symbol}`);
+  };
 
 
   return (
-    <div className="page">
+    <div style={{ padding: "20px" }}>
 
-      <div className="card">
+      <h2>Stocks under ₹{max}</h2>
 
-        <button onClick={onBack}>← Back</button>
+      {/* ============ SPINNER ============ */}
+      {loading && (
+        <div style={{ textAlign: "center", marginTop: "40px" }}>
 
-        <h2>Stocks under ₹{maxPrice}</h2>
+          <div className="spinner" />
 
-        {stocks.map((s, i) => (
-          <div
-            key={i}
-            style={{
-              padding: "8px",
-              borderBottom: "1px solid #eee",
-              cursor: "pointer"
-            }}
-            onClick={() => onSelect(s.symbol)}
-          >
-            {s.symbol} – ₹{s.price}
-          </div>
-        ))}
+          <p>Loading stocks... please wait</p>
 
-      </div>
+        </div>
+      )}
+      {/* ================================= */}
+
+
+      {!loading && (
+        <div>
+          {stocks.map((s, i) => (
+            <div
+              key={i}
+              onClick={() => openStock(s.symbol)}
+              style={{
+                padding: "8px",
+                borderBottom: "1px solid #eee",
+                cursor: "pointer"
+              }}
+            >
+              {s.symbol} – ₹{s.price}
+            </div>
+          ))}
+        </div>
+      )}
+
     </div>
   );
 }
 
-export default StockListPage;
+export default StocksListPage;
