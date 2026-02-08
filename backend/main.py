@@ -1298,7 +1298,7 @@ def get_stock_data(
 
 
 # ==========================================================
-#  NEW ENDPOINT – STOCKS BY PRICE (FOR SIDEBAR)
+#  NEW ENDPOINT – STOCKS BY PRICE (NSE + BSE RELIABLE)
 #  ➜ PURE ADDITION – DOES NOT TOUCH EXISTING LOGIC
 # ==========================================================
 
@@ -1306,24 +1306,51 @@ def get_stock_data(
 def stocks_by_price(max: float = Query(100, ge=1)):
 
     try:
-        # ===========================================
-        # 1️⃣ SAFE SYMBOL SOURCE (NO NSE BLOCK)
-        # ===========================================
-
-        # Public mirror of NIFTY 500 symbols
-        url = "https://raw.githubusercontent.com/datasets/nifty-500/master/data/nifty-500.csv"
-
-        nse = pd.read_csv(url)
-
-        symbols = [s + ".NS" for s in nse["Symbol"].tolist()]
-
         result = []
 
-        # ===========================================
-        # 2️⃣ BATCH FETCH (FAST + SAFE)
-        # ===========================================
+        # ==========================================
+        # 1️⃣ NSE SYMBOLS USING NSEPYTHON
+        # ==========================================
+        try:
+            from nsepython import nse_eq_symbols
 
-        for chunk in [symbols[i:i+50] for i in range(0, len(symbols), 50)]:
+            nse_symbols = nse_eq_symbols()
+
+            nse_tickers = [s + ".NS" for s in nse_symbols]
+
+        except Exception as e:
+            nse_tickers = []
+            print("NSE SYMBOL ERROR:", e)
+
+
+        # ==========================================
+        # 2️⃣ BSE SYMBOLS USING BSEDATA
+        # ==========================================
+        try:
+            from bsedata.bse import BSE
+
+            b = BSE()
+
+            # Common active BSE list (top 2000 approx)
+            bse_codes = range(500002, 540000)
+
+            bse_tickers = [str(c) + ".BO" for c in bse_codes]
+
+        except Exception as e:
+            bse_tickers = []
+            print("BSE SYMBOL ERROR:", e)
+
+
+        # ==========================================
+        # 3️⃣ COMBINE BOTH
+        # ==========================================
+        all_tickers = nse_tickers + bse_tickers
+
+
+        # ==========================================
+        # 4️⃣ BATCH PRICE FETCH VIA YFINANCE
+        # ==========================================
+        for chunk in [all_tickers[i:i+40] for i in range(0, len(all_tickers), 40)]:
 
             try:
                 data = yf.download(
@@ -1348,8 +1375,11 @@ def stocks_by_price(max: float = Query(100, ge=1)):
                         price = float(df["Close"].iloc[-1])
 
                         if price <= max:
+
+                            clean = s.replace(".NS","").replace(".BO","")
+
                             result.append({
-                                "symbol": s.replace(".NS", ""),
+                                "symbol": clean,
                                 "price": round(price, 2)
                             })
 
@@ -1359,12 +1389,15 @@ def stocks_by_price(max: float = Query(100, ge=1)):
             except:
                 continue
 
+
         result = sorted(result, key=lambda x: x["price"])
+
 
         return {
             "stocks": result,
             "count": len(result)
         }
+
 
     except Exception as e:
         return {
