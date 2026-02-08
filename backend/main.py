@@ -1306,32 +1306,22 @@ def get_stock_data(
 def stocks_by_price(max: float = Query(100, ge=1)):
 
     try:
-        from nsepython import nse_get_top_gainers, nse_get_top_losers, nse_quote_ltp
+        from nsepython import nse_eq_symbols, nse_eq
 
         result = []
 
-        # 1️⃣ Get active market stocks
-        gainers = nse_get_top_gainers()
-        losers = nse_get_top_losers()
+        # 1️⃣ Get ALL NSE equity symbols
+        symbols = nse_eq_symbols()
 
-        symbols = []
-
-        for g in gainers:
-            symbols.append(g["symbol"])
-
-        for l in losers:
-            symbols.append(l["symbol"])
-
-        # unique only
-        symbols = list(set(symbols))
-
-        # 2️⃣ Fetch live prices
+        # 2️⃣ Check price for each
         for sym in symbols:
 
             try:
-                price = float(nse_quote_ltp(sym))
+                data = nse_eq(sym)
 
-                if price <= max:
+                price = float(data.get("priceInfo", {}).get("lastPrice", 0))
+
+                if price and price <= max:
                     result.append({
                         "symbol": sym,
                         "price": round(price, 2)
@@ -1340,7 +1330,8 @@ def stocks_by_price(max: float = Query(100, ge=1)):
             except:
                 continue
 
-        # 3️⃣ Sort & limit TOP 50 only
+
+        # 3️⃣ Sort & take TOP 50
         result = sorted(result, key=lambda x: x["price"])[:50]
 
         return {
