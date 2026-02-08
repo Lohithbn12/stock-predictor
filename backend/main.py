@@ -1308,7 +1308,8 @@ def get_stock_data(
 
 import os
 
-NSE_CSV_PATH = r"C:\Users\lohithlikith\Downloads\EQUITY_L.csv"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+NSE_CSV_PATH = os.path.join(BASE_DIR, "EQUITY_L.csv")
 
 @app.get("/stocks-by-price")
 def stocks_by_price(max: float = Query(100, ge=1)):
