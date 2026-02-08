@@ -10,3 +10,12 @@ xgboost
 scipy
 python-multipart
 pydantic
+
+# ===== NEW FOR NSE + BSE =====
+nsepython
+beautifulsoup4
+requests
+
+# ===== HELPERS USED BY YFINANCE =====
+lxml
+html5lib
