@@ -42,15 +42,16 @@ const [listLoading, setListLoading] = useState(false);
   // ============= NEW SIDEBAR FUNCTION =============
 const fetchStocksByPrice = async (maxPrice) => {
 
+  if (!maxPrice) return;
+
   setListLoading(true);
   setPriceFilter(maxPrice);
 
   try {
-    if (!maxPrice) return;
 
-const res = await fetch(
-  `${API_URL}/stocks-by-price?max=${Number(maxPrice)}`
-);
+    const res = await fetch(
+      `${API_URL}/stocks-by-price?max=${Number(maxPrice)}`
+    );
 
     if (!res.ok) throw new Error("Failed");
 
@@ -58,15 +59,16 @@ const res = await fetch(
 
     setFilteredStocks(json.stocks || []);
 
-    // OPEN NEW PAGE AFTER LOAD
+    // OPEN PAGE ONLY AFTER DATA COMES
     setListPage(maxPrice);
 
   } catch (err) {
-    console.log(err);
+    console.log("PRICE FETCH ERROR:", err);
   }
 
   setListLoading(false);
 };
+
 
 // ================================================
 
@@ -191,16 +193,23 @@ const selectStockFromSidebar = (symbol) => {
 if (listPage) {
   return (
     <StockListPage
-      maxPrice={listPage}
+      maxPrice={Number(listPage)}
+      stocks={filteredStocks}
+      loading={listLoading}
       onSelect={(sym) => {
         setCompany(sym);
         setListPage(null);
-        fetchStockData();
+
+        // WAIT FOR STATE THEN FETCH
+        setTimeout(() => {
+          fetchStockData();
+        }, 200);
       }}
       onBack={() => setListPage(null)}
     />
   );
 }
+
 
 
   return (
