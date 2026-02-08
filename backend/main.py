@@ -1306,32 +1306,32 @@ def get_stock_data(
 def stocks_by_price(max: float = Query(100, ge=1)):
 
     try:
-        from nsepython import nse_eq_symbols, nse_quote
+        from nsepython import nse_get_top_gainers, nse_get_top_losers, nse_quote_ltp
 
         result = []
 
-        # 1️⃣ Get all NSE equity symbols
-        try:
-            nse_symbols = nse_eq_symbols()
-        except Exception as e:
-            return {
-                "stocks": [],
-                "error": f"NSE symbols fetch failed: {str(e)}"
-            }
+        # 1️⃣ Get active market stocks
+        gainers = nse_get_top_gainers()
+        losers = nse_get_top_losers()
 
-        # 2️⃣ Loop through symbols & check price
-        for sym in nse_symbols:
+        symbols = []
+
+        for g in gainers:
+            symbols.append(g["symbol"])
+
+        for l in losers:
+            symbols.append(l["symbol"])
+
+        # unique only
+        symbols = list(set(symbols))
+
+        # 2️⃣ Fetch live prices
+        for sym in symbols:
 
             try:
-                data = nse_quote(sym)
+                price = float(nse_quote_ltp(sym))
 
-                price = float(
-                    data.get("priceInfo", {})
-                        .get("lastPrice", 0)
-                )
-
-                if price > 0 and price <= max:
-
+                if price <= max:
                     result.append({
                         "symbol": sym,
                         "price": round(price, 2)
@@ -1340,23 +1340,16 @@ def stocks_by_price(max: float = Query(100, ge=1)):
             except:
                 continue
 
-
-        # 3️⃣ Sort by price low → high
-        result = sorted(result, key=lambda x: x["price"])
-
-        # 4️⃣ RETURN ONLY TOP 50
-        result = result[:50]
-
+        # 3️⃣ Sort & limit TOP 50 only
+        result = sorted(result, key=lambda x: x["price"])[:50]
 
         return {
             "stocks": result,
             "count": len(result)
         }
 
-
     except Exception as e:
         return {
             "stocks": [],
             "error": str(e)
         }
-
