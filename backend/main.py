@@ -1311,15 +1311,13 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CSV_PATH = os.path.join(BASE_DIR, "EQUITY_L.csv")
 
-import concurrent.futures
-
 @app.get("/stocks-by-price")
 def stocks_by_price(max: float = Query(100, ge=1)):
 
     try:
-        # --------------------------------------------------
-        # 1️⃣ LOAD SYMBOLS FROM CSV
-        # --------------------------------------------------
+        # ==========================================
+        # 1️⃣ LOAD SYMBOLS FROM YOUR CSV
+        # ==========================================
         if not os.path.exists(NSE_CSV_PATH):
             return {
                 "stocks": [],
@@ -1336,67 +1334,73 @@ def stocks_by_price(max: float = Query(100, ge=1)):
 
         symbols = df["SYMBOL"].dropna().unique().tolist()
 
+        # Convert to yfinance format
         tickers = [s + ".NS" for s in symbols]
 
         result = []
 
-        # --------------------------------------------------
-        # 2️⃣ FAST PARALLEL PRICE FETCHER
-        # --------------------------------------------------
-        def get_price(sym):
+        # ==========================================
+        # 2️⃣ ULTRA FAST FETCH – ONLY 1 DAY DATA
+        # ==========================================
+        CHUNK_SIZE = 100     # Bigger batch = faster
+        DAYS = "2d"          # Only last 2 days → super quick
+
+        for i in range(0, len(tickers), CHUNK_SIZE):
+
+            chunk = tickers[i:i + CHUNK_SIZE]
+
             try:
                 data = yf.download(
-                    sym,
-                    period="1d",
+                    tickers=chunk,
+                    period=DAYS,
                     interval="1d",
-                    progress=False
+                    group_by="ticker",
+                    progress=False,
+                    threads=True
                 )
 
-                if data.empty:
-                    return None
+                for s in chunk:
+                    try:
+                        dfp = data[s]
 
-                if isinstance(data.columns, pd.MultiIndex):
-                    data.columns = data.columns.get_level_values(0)
+                        if dfp.empty:
+                            continue
 
-                price = float(data["Close"].iloc[-1])
+                        # Flatten multi index
+                        if isinstance(dfp.columns, pd.MultiIndex):
+                            dfp.columns = dfp.columns.get_level_values(0)
 
-                if price <= max:
-                    return {
-                        "symbol": sym.replace(".NS", ""),
-                        "price": round(price, 2)
-                    }
+                        # 👉 LATEST CLOSE
+                        price = float(dfp["Close"].iloc[-1])
+
+                        # ==================================
+                        # 3️⃣ PRICE SEGREGATION LOGIC
+                        # ==================================
+                        if price <= max:
+
+                            result.append({
+                                "symbol": s.replace(".NS", ""),
+                                "price": round(price, 2),
+                                "date": str(dfp.index[-1].date())
+                            })
+
+                    except:
+                        continue
 
             except:
-                return None
+                continue
 
-
-        # 🔥 THREAD POOL (MASSIVE SPEED BOOST)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as exe:
-
-            futures = [exe.submit(get_price, t) for t in tickers]
-
-            for f in concurrent.futures.as_completed(futures):
-
-                res = f.result()
-
-                if res:
-                    result.append(res)
-
-                # 🚀 EARLY STOP WHEN 50 FOUND
-                if len(result) >= 50:
-                    break
-
-
-        # --------------------------------------------------
-        # 3️⃣ SORT & RETURN
-        # --------------------------------------------------
+        # ==========================================
+        # 4️⃣ SORT & RETURN TOP 50
+        # ==========================================
         result = sorted(result, key=lambda x: x["price"])[:50]
 
         return {
             "stocks": result,
-            "count": len(result)
+            "count": len(result),
+            "filter": f"Stocks under ₹{max}",
+            "latest_date": result[0]["date"] if result else None
         }
-
 
     except Exception as e:
         return {
