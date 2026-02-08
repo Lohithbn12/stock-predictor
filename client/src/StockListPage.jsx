@@ -2,48 +2,64 @@ import { useEffect, useState } from "react";
 
 const API_URL = "https://stock-predictor-0zst.onrender.com";
 
-function StocksListPage({
-  maxPrice,
-  stocks = [],
-  loading = false,
-  onSelect,
-  onBack
-}) {
+function StockListPage({ maxPrice, onSelect, onBack }) {
+
+  const [stocks, setStocks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+
+    const load = async () => {
+
+      if (!maxPrice) return;
+
+      setLoading(true);
+      setError("");
+
+      try {
+
+        const res = await fetch(
+          `${API_URL}/stocks-by-price?max=${Number(maxPrice)}`
+        );
+
+        if (!res.ok) throw new Error("API Failed");
+
+        const json = await res.json();
+
+        setStocks(json.stocks || []);
+
+      } catch (e) {
+        console.log(e);
+        setError("Failed to load stocks");
+      }
+
+      setLoading(false);
+    };
+
+    load();
+
+  }, [maxPrice]);
+
 
   return (
     <div style={{ padding: "20px" }}>
 
-      {/* BACK BUTTON */}
-      <button
-        onClick={onBack}
-        style={{
-          marginBottom: "10px",
-          padding: "6px 12px",
-          cursor: "pointer"
-        }}
-      >
-        ← Back
-      </button>
+      <button onClick={onBack}>← Back</button>
 
       <h2>Stocks under ₹{maxPrice}</h2>
 
-      {/* ============ SPINNER ============ */}
       {loading && (
-        <div style={{ textAlign: "center", marginTop: "40px" }}>
-
-          <div className="spinner" />
-
-          <p>Loading stocks... please wait</p>
-
+        <div style={{ marginTop: "20px" }}>
+          Loading stocks...
         </div>
       )}
-      {/* ================================= */}
 
+      {error && <div>{error}</div>}
 
       {!loading && stocks.length === 0 && (
-        <p>No stocks found in this range</p>
+        <div>No stocks found in this range</div>
       )}
-
 
       {!loading && (
         <div>
@@ -67,4 +83,4 @@ function StocksListPage({
   );
 }
 
-export default StocksListPage;
+export default StockListPage;
