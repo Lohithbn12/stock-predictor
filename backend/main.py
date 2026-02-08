@@ -1311,12 +1311,14 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CSV_PATH = os.path.join(BASE_DIR, "EQUITY_L.csv")
 
+import concurrent.futures
+
 @app.get("/stocks-by-price")
 def stocks_by_price(max: float = Query(100, ge=1)):
 
     try:
         # --------------------------------------------------
-        # 1️⃣ READ YOUR OFFICIAL NSE SYMBOL LIST
+        # 1️⃣ LOAD SYMBOLS FROM CSV
         # --------------------------------------------------
         if not os.path.exists(NSE_CSV_PATH):
             return {
@@ -1334,53 +1336,59 @@ def stocks_by_price(max: float = Query(100, ge=1)):
 
         symbols = df["SYMBOL"].dropna().unique().tolist()
 
-        # Convert to yfinance format
         tickers = [s + ".NS" for s in symbols]
 
         result = []
 
         # --------------------------------------------------
-        # 2️⃣ FETCH PRICES VIA YFINANCE (BATCH MODE)
+        # 2️⃣ FAST PARALLEL PRICE FETCHER
         # --------------------------------------------------
-        for chunk in [tickers[i:i+40] for i in range(0, len(tickers), 40)]:
-
+        def get_price(sym):
             try:
                 data = yf.download(
-                    tickers=chunk,
-                    period="5d",
+                    sym,
+                    period="1d",
                     interval="1d",
-                    group_by="ticker",
                     progress=False
                 )
 
-                for s in chunk:
-                    try:
-                        dfp = data[s]
+                if data.empty:
+                    return None
 
-                        if dfp.empty:
-                            continue
+                if isinstance(data.columns, pd.MultiIndex):
+                    data.columns = data.columns.get_level_values(0)
 
-                        if isinstance(dfp.columns, pd.MultiIndex):
-                            dfp.columns = dfp.columns.get_level_values(0)
+                price = float(data["Close"].iloc[-1])
 
-                        price = float(dfp["Close"].iloc[-1])
-
-                        if price <= max:
-                            clean = s.replace(".NS", "")
-
-                            result.append({
-                                "symbol": clean,
-                                "price": round(price, 2)
-                            })
-
-                    except:
-                        continue
+                if price <= max:
+                    return {
+                        "symbol": sym.replace(".NS", ""),
+                        "price": round(price, 2)
+                    }
 
             except:
-                continue
+                return None
+
+
+        # 🔥 THREAD POOL (MASSIVE SPEED BOOST)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as exe:
+
+            futures = [exe.submit(get_price, t) for t in tickers]
+
+            for f in concurrent.futures.as_completed(futures):
+
+                res = f.result()
+
+                if res:
+                    result.append(res)
+
+                # 🚀 EARLY STOP WHEN 50 FOUND
+                if len(result) >= 50:
+                    break
+
 
         # --------------------------------------------------
-        # 3️⃣ SORT & LIMIT TOP 50
+        # 3️⃣ SORT & RETURN
         # --------------------------------------------------
         result = sorted(result, key=lambda x: x["price"])[:50]
 
@@ -1388,6 +1396,7 @@ def stocks_by_price(max: float = Query(100, ge=1)):
             "stocks": result,
             "count": len(result)
         }
+
 
     except Exception as e:
         return {
