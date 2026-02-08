@@ -1306,91 +1306,46 @@ def get_stock_data(
 def stocks_by_price(max: float = Query(100, ge=1)):
 
     try:
+        from nsepython import nse_eq_symbols, nse_quote
+
         result = []
 
-        # ==========================================
-        # 1️⃣ NSE SYMBOLS USING NSEPYTHON
-        # ==========================================
+        # 1️⃣ Get all NSE equity symbols
         try:
-            from nsepython import nse_eq_symbols
-
             nse_symbols = nse_eq_symbols()
-
-            nse_tickers = [s + ".NS" for s in nse_symbols]
-
         except Exception as e:
-            nse_tickers = []
-            print("NSE SYMBOL ERROR:", e)
+            return {
+                "stocks": [],
+                "error": f"NSE symbols fetch failed: {str(e)}"
+            }
 
-
-        # ==========================================
-        # 2️⃣ BSE SYMBOLS USING BSEDATA
-        # ==========================================
-        try:
-            from bsedata.bse import BSE
-
-            b = BSE()
-
-            # Common active BSE list (top 2000 approx)
-            bse_codes = range(500002, 540000)
-
-            bse_tickers = [str(c) + ".BO" for c in bse_codes]
-
-        except Exception as e:
-            bse_tickers = []
-            print("BSE SYMBOL ERROR:", e)
-
-
-        # ==========================================
-        # 3️⃣ COMBINE BOTH
-        # ==========================================
-        all_tickers = nse_tickers + bse_tickers
-
-
-        # ==========================================
-        # 4️⃣ BATCH PRICE FETCH VIA YFINANCE
-        # ==========================================
-        for chunk in [all_tickers[i:i+40] for i in range(0, len(all_tickers), 40)]:
+        # 2️⃣ Loop through symbols & check price
+        for sym in nse_symbols:
 
             try:
-                data = yf.download(
-                    tickers=chunk,
-                    period="5d",
-                    interval="1d",
-                    group_by="ticker",
-                    progress=False
+                data = nse_quote(sym)
+
+                price = float(
+                    data.get("priceInfo", {})
+                        .get("lastPrice", 0)
                 )
 
-                for s in chunk:
+                if price > 0 and price <= max:
 
-                    try:
-                        df = data[s]
-
-                        if df.empty:
-                            continue
-
-                        if isinstance(df.columns, pd.MultiIndex):
-                            df.columns = df.columns.get_level_values(0)
-
-                        price = float(df["Close"].iloc[-1])
-
-                        if price <= max:
-
-                            clean = s.replace(".NS","").replace(".BO","")
-
-                            result.append({
-                                "symbol": clean,
-                                "price": round(price, 2)
-                            })
-
-                    except:
-                        continue
+                    result.append({
+                        "symbol": sym,
+                        "price": round(price, 2)
+                    })
 
             except:
                 continue
 
 
+        # 3️⃣ Sort by price low → high
         result = sorted(result, key=lambda x: x["price"])
+
+        # 4️⃣ RETURN ONLY TOP 50
+        result = result[:50]
 
 
         return {
@@ -1404,3 +1359,4 @@ def stocks_by_price(max: float = Query(100, ge=1)):
             "stocks": [],
             "error": str(e)
         }
+
