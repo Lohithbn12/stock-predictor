@@ -300,6 +300,12 @@ h1 {
     margin-bottom: 6px;
   }
 
+  button[style*="position: fixed"] {
+  top: 6px !important;
+  left: 6px !important;
+  z-index: 2000 !important;
+}
+
   .explain-btn {
     position: static !important;   /* remove absolute */
     display: block;
