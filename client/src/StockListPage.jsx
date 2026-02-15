@@ -1,79 +1,88 @@
 import { useEffect, useState } from "react";
 
-const API_URL = "https://stock-predictor-0zst.onrender.com";
+function StockListPage({ maxPrice, stocks = [], loading = false, onSelect, onBack }) {
 
-function StockListPage({ maxPrice, onSelect, onBack }) {
+  const [visibleStocks, setVisibleStocks] = useState([]);
 
-  const [stocks, setStocks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
+  // Progressive loading (smooth appearing one by one)
   useEffect(() => {
+    setVisibleStocks([]);
 
-    const load = async () => {
+    if (!stocks || stocks.length === 0) return;
 
-      if (!maxPrice) return;
+    let index = 0;
 
-      setLoading(true);
-      setError("");
+    const interval = setInterval(() => {
+      setVisibleStocks(prev => {
+        if (index >= stocks.length) {
+          clearInterval(interval);
+          return prev;
+        }
+        const next = stocks[index];
+        index++;
+        return [...prev, next];
+      });
+    }, 30); // speed of appearance
 
-      try {
-
-        const res = await fetch(
-          `${API_URL}/stocks-by-price?max=${Number(maxPrice)}`
-        );
-
-        if (!res.ok) throw new Error("API Failed");
-
-        const json = await res.json();
-
-        setStocks(json.stocks || []);
-
-      } catch (e) {
-        console.log(e);
-        setError("Failed to load stocks");
-      }
-
-      setLoading(false);
-    };
-
-    load();
-
-  }, [maxPrice]);
-
+    return () => clearInterval(interval);
+  }, [stocks]);
 
   return (
     <div style={{ padding: "20px" }}>
 
-      <button onClick={onBack}>← Back</button>
+      <button
+        onClick={onBack}
+        style={{
+          marginBottom: "15px",
+          padding: "6px 12px",
+          cursor: "pointer"
+        }}
+      >
+        ← Back
+      </button>
 
       <h2>Stocks under ₹{maxPrice}</h2>
 
       {loading && (
-        <div style={{ marginTop: "20px" }}>
+        <div style={{ marginTop: "20px", color: "#2563eb" }}>
           Loading stocks...
         </div>
       )}
 
-      {error && <div>{error}</div>}
-
-      {!loading && stocks.length === 0 && (
-        <div>No stocks found in this range</div>
+      {!loading && visibleStocks.length === 0 && (
+        <div style={{ marginTop: "15px" }}>
+          No stocks found in this range
+        </div>
       )}
 
-      {!loading && (
-        <div>
-          {stocks.map((s, i) => (
+      {!loading && visibleStocks.length > 0 && (
+        <div style={{ marginTop: "15px" }}>
+          {visibleStocks.map((s, index) => (
             <div
-              key={i}
-              onClick={() => onSelect(s.symbol)}
+              key={s?.symbol || index}
+              onClick={() => s?.symbol && onSelect(s.symbol)}
               style={{
-                padding: "8px",
+                padding: "10px",
                 borderBottom: "1px solid #eee",
-                cursor: "pointer"
+                cursor: "pointer",
+                transition: "background 0.2s ease"
               }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "#f5f5f5"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "white"}
             >
-              {s.symbol} – ₹{s.price}
+              <div>
+                <strong>{s?.symbol}</strong> — ₹{s?.price}
+              </div>
+
+              {s?.company && (
+                <div style={{
+                  fontSize: "12px",
+                  color: "#666",
+                  marginTop: "2px"
+                }}>
+                  {s.company}
+                </div>
+              )}
             </div>
           ))}
         </div>

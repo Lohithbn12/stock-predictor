@@ -6,6 +6,7 @@ import "./App.css";
 
 const API_URL = "https://stock-predictor-0zst.onrender.com";
 
+
 function StockPage() {
   const [company, setCompany] = useState("");
   const [days, setDays] = useState(30);
@@ -16,6 +17,7 @@ function StockPage() {
   const [error, setError] = useState("");
   // ===== NEW LOADING FOR LIST PAGE =====
 const [listLoading, setListLoading] = useState(false);
+  const [showPredictionPanel, setShowPredictionPanel] = useState(false);
 
 
   // ✅ NEW STATE (ONLY ADDITION)
@@ -29,9 +31,9 @@ const [listLoading, setListLoading] = useState(false);
   // ======================================================
 
   // ============= SIDEBAR ADDITIONS =================
-  const [priceFilter, setPriceFilter] = useState(null);
+
   const [filteredStocks, setFilteredStocks] = useState([]);
-  const [showPredictionPanel, setShowPredictionPanel] = useState(false);
+
   // ================================================
 
   // ===== NEW FOR PAGE NAVIGATION =====
@@ -41,14 +43,11 @@ const [listLoading, setListLoading] = useState(false);
 
   // ============= NEW SIDEBAR FUNCTION =============
 const fetchStocksByPrice = async (maxPrice) => {
-
   if (!maxPrice) return;
 
   setListLoading(true);
-  setPriceFilter(maxPrice);
 
   try {
-
     const res = await fetch(
       `${API_URL}/stocks-by-price?max=${Number(maxPrice)}`
     );
@@ -58,8 +57,6 @@ const fetchStocksByPrice = async (maxPrice) => {
     const json = await res.json();
 
     setFilteredStocks(json.stocks || []);
-
-    // OPEN PAGE ONLY AFTER DATA COMES
     setListPage(maxPrice);
 
   } catch (err) {
@@ -67,17 +64,6 @@ const fetchStocksByPrice = async (maxPrice) => {
   }
 
   setListLoading(false);
-};
-
-
-// ================================================
-
-
-const selectStockFromSidebar = (symbol) => {
-  setCompany(symbol);
-  setTimeout(() => {
-    fetchStockData();   // USING YOUR EXISTING FUNCTION
-  }, 100);
 };
 
 
@@ -218,12 +204,7 @@ if (listPage) {
 
     {/* ===== 3 DOT MENU BUTTON ===== */}
 <button
-  style={{
-    position: "fixed",
-    left: 10,
-    top: 10,
-    zIndex: 999
-  }}
+  className="menu-button"
   onClick={() => setShowMenu(!showMenu)}
 >
   ⋮

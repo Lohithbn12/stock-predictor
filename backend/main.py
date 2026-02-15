@@ -4,6 +4,8 @@ from yfinance import Search
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import time
+
 
 from sklearn.linear_model import LinearRegression
 from arch import arch_model
@@ -1311,99 +1313,126 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CSV_PATH = os.path.join(BASE_DIR, "EQUITY_L.csv")
 
+import threading
+
+# ==========================================================
+# STABLE STOCK CACHE ENGINE (NO BULK DOWNLOAD)
+# ==========================================================
+
+import os
+import threading
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+NSE_CSV_PATH = os.path.join(BASE_DIR, "EQUITY_L.csv")
+
+stock_cache = {
+    "data": [],
+    "last_update": 0
+}
+
+
+def refresh_stock_cache():
+    global stock_cache
+
+    while True:
+        try:
+            print("Refreshing stock cache safely...")
+
+            if not os.path.exists(NSE_CSV_PATH):
+                print("CSV file not found.")
+                time.sleep(600)
+                continue
+
+            df = pd.read_csv(NSE_CSV_PATH)
+
+            if "SERIES" in df.columns:
+                df = df[df["SERIES"] == "EQ"]
+
+            symbols = df["SYMBOL"].dropna().unique().tolist()
+
+            # 🔥 LIMIT HARD (IMPORTANT)
+            symbols = symbols[:150]
+
+            results = []
+
+            for symbol in symbols:
+                ticker = symbol + ".NS"
+
+                try:
+                    data = yf.download(
+                        ticker,
+                        period="2d",
+                        interval="1d",
+                        progress=False,
+                        threads=False
+                    )
+
+                    if data is None or data.empty:
+                        continue
+
+                    if isinstance(data.columns, pd.MultiIndex):
+                        data.columns = data.columns.get_level_values(0)
+
+                    price = float(data["Close"].iloc[-1])
+
+                    company_name = df.loc[
+                        df["SYMBOL"] == symbol,
+                        "NAME OF COMPANY"
+                    ].values
+
+                    results.append({
+                        "symbol": symbol,
+                        "company": company_name[0] if len(company_name) else "",
+                        "price": round(price, 2),
+                        "date": str(data.index[-1].date())
+                    })
+
+                    time.sleep(0.2)  # 🔥 Prevent Yahoo rate-limit
+
+                except Exception:
+                    continue
+
+            stock_cache["data"] = results
+            stock_cache["last_update"] = time.time()
+
+            print(f"Stock cache updated. Total stocks: {len(results)}")
+
+        except Exception as e:
+            print("Cache refresh error:", e)
+
+        time.sleep(900)  # refresh every 15 mins
+
+
 @app.get("/stocks-by-price")
 def stocks_by_price(max: float = Query(100, ge=1)):
 
     try:
-        # ==========================================
-        # 1️⃣ LOAD SYMBOLS FROM YOUR CSV
-        # ==========================================
-        if not os.path.exists(NSE_CSV_PATH):
-            return {
-                "stocks": [],
-                "error": f"CSV NOT FOUND at {NSE_CSV_PATH}"
-            }
+        filtered = [
+            s for s in stock_cache["data"]
+            if s["price"] <= max
+        ]
 
-        df = pd.read_csv(NSE_CSV_PATH)
-
-        if "SYMBOL" not in df.columns:
-            return {
-                "stocks": [],
-                "error": "SYMBOL column not found in CSV"
-            }
-
-        symbols = df["SYMBOL"].dropna().unique().tolist()
-
-        # Convert to yfinance format
-        tickers = [s + ".NS" for s in symbols]
-
-        result = []
-
-        # ==========================================
-        # 2️⃣ ULTRA FAST FETCH – ONLY 1 DAY DATA
-        # ==========================================
-        CHUNK_SIZE = 100     # Bigger batch = faster
-        DAYS = "2d"          # Only last 2 days → super quick
-
-        for i in range(0, len(tickers), CHUNK_SIZE):
-
-            chunk = tickers[i:i + CHUNK_SIZE]
-
-            try:
-                data = yf.download(
-                    tickers=chunk,
-                    period=DAYS,
-                    interval="1d",
-                    group_by="ticker",
-                    progress=False,
-                    threads=True
-                )
-
-                for s in chunk:
-                    try:
-                        dfp = data[s]
-
-                        if dfp.empty:
-                            continue
-
-                        # Flatten multi index
-                        if isinstance(dfp.columns, pd.MultiIndex):
-                            dfp.columns = dfp.columns.get_level_values(0)
-
-                        # 👉 LATEST CLOSE
-                        price = float(dfp["Close"].iloc[-1])
-
-                        # ==================================
-                        # 3️⃣ PRICE SEGREGATION LOGIC
-                        # ==================================
-                        if price <= max:
-
-                            result.append({
-                                "symbol": s.replace(".NS", ""),
-                                "price": round(price, 2),
-                                "date": str(dfp.index[-1].date())
-                            })
-
-                    except:
-                        continue
-
-            except:
-                continue
-
-        # ==========================================
-        # 4️⃣ SORT & RETURN TOP 50
-        # ==========================================
-        result = sorted(result, key=lambda x: x["price"])[:50]
+        filtered = sorted(filtered, key=lambda x: x["price"])[:100]
 
         return {
-            "stocks": result,
-            "count": len(result),
+            "stocks": filtered,
+            "count": len(filtered),
             "filter": f"Stocks under ₹{max}",
-            "latest_date": result[0]["date"] if result else None
+            "latest_date": filtered[0]["date"] if filtered else None,
+            "last_updated": stock_cache["last_update"]
         }
 
     except Exception as e:
         return {
             "stocks": [],
+            "count": 0,
             "error": str(e)
         }
+
+
+@app.on_event("startup")
+def start_background_refresh():
+    threading.Thread(
+        target=refresh_stock_cache,
+        daemon=True
+    ).start()
