@@ -1310,84 +1310,117 @@ def get_stock_data(
 
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-NSE_CSV_PATH = os.path.join(BASE_DIR, "EQUITY_L.csv")
-
-import threading
-
 # ==========================================================
-# STABLE STOCK CACHE ENGINE (NO BULK DOWNLOAD)
+# LIVE NSE STOCK CACHE (NO EXCEL REQUIRED)
 # ==========================================================
 
-import os
-import threading
+# ==========================================================
+# LIVE NSE STOCK CACHE (PRODUCTION SAFE – NO EXCEL)
+# ==========================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-NSE_CSV_PATH = os.path.join(BASE_DIR, "EQUITY_L.csv")
+import threading
+import requests
+from io import StringIO
 
 stock_cache = {
     "data": [],
     "last_update": 0
 }
 
+# 🔗 NSE Symbol Source
+NSE_SYMBOL_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 
+
+# ==========================================================
+# FETCH NSE SYMBOL LIST (WITH HEADERS – RENDER SAFE)
+# ==========================================================
+def get_nse_symbols():
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept-Language": "en-US,en;q=0.9"
+        }
+
+        response = requests.get(
+            NSE_SYMBOL_URL,
+            headers=headers,
+            timeout=10
+        )
+
+        if response.status_code != 200:
+            print("NSE blocked request:", response.status_code)
+            return []
+
+        df = pd.read_csv(StringIO(response.text))
+
+        if "SERIES" in df.columns:
+            df = df[df["SERIES"] == "EQ"]
+
+        symbols = df["SYMBOL"].dropna().unique().tolist()
+
+        import random
+        random.shuffle(symbols)
+
+        # Limit to safe number (avoid heavy Yahoo load)
+        return symbols[:200]
+
+    except Exception as e:
+        print("Symbol fetch error:", e)
+        return []
+
+
+# ==========================================================
+# FAST STOCK CACHE REFRESH (BATCH DOWNLOAD)
+# ==========================================================
 def refresh_stock_cache():
     global stock_cache
 
     while True:
         try:
-            print("Refreshing stock cache safely...")
+            print("Refreshing LIVE NSE stock cache...")
 
-            if not os.path.exists(NSE_CSV_PATH):
-                print("CSV file not found.")
-                time.sleep(600)
+            symbols = get_nse_symbols()
+
+            if not symbols:
+                time.sleep(900)
                 continue
 
-            df = pd.read_csv(NSE_CSV_PATH)
+            tickers = [s + ".NS" for s in symbols]
 
-            if "SERIES" in df.columns:
-                df = df[df["SERIES"] == "EQ"]
-
-            symbols = df["SYMBOL"].dropna().unique().tolist()
-
-            # 🔥 LIMIT HARD (IMPORTANT)
-            symbols = symbols[:150]
+            # 🔥 Batch download (MUCH FASTER)
+            data = yf.download(
+                tickers,
+                period="2d",
+                interval="1d",
+                progress=False,
+                group_by="ticker",
+                threads=True
+            )
 
             results = []
 
             for symbol in symbols:
-                ticker = symbol + ".NS"
-
                 try:
-                    data = yf.download(
-                        ticker,
-                        period="2d",
-                        interval="1d",
-                        progress=False,
-                        threads=False
-                    )
+                    ticker = symbol + ".NS"
 
-                    if data is None or data.empty:
+                    if ticker not in data:
                         continue
 
-                    if isinstance(data.columns, pd.MultiIndex):
-                        data.columns = data.columns.get_level_values(0)
+                    df = data[ticker]
 
-                    price = float(data["Close"].iloc[-1])
+                    if df is None or df.empty:
+                        continue
 
-                    company_name = df.loc[
-                        df["SYMBOL"] == symbol,
-                        "NAME OF COMPANY"
-                    ].values
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+
+                    price = float(df["Close"].iloc[-1])
 
                     results.append({
                         "symbol": symbol,
-                        "company": company_name[0] if len(company_name) else "",
                         "price": round(price, 2),
-                        "date": str(data.index[-1].date())
+                        "date": str(df.index[-1].date())
                     })
-
-                    time.sleep(0.2)  # 🔥 Prevent Yahoo rate-limit
 
                 except Exception:
                     continue
@@ -1395,14 +1428,18 @@ def refresh_stock_cache():
             stock_cache["data"] = results
             stock_cache["last_update"] = time.time()
 
-            print(f"Stock cache updated. Total stocks: {len(results)}")
+            print(f"Cache updated successfully. Stocks loaded: {len(results)}")
 
         except Exception as e:
-            print("Cache refresh error:", e)
+            print("Stock cache error:", e)
 
-        time.sleep(900)  # refresh every 15 mins
+        # Refresh every 15 minutes
+        time.sleep(900)
 
 
+# ==========================================================
+# STOCK FILTER ENDPOINT
+# ==========================================================
 @app.get("/stocks-by-price")
 def stocks_by_price(max: float = Query(100, ge=1)):
 
@@ -1430,6 +1467,9 @@ def stocks_by_price(max: float = Query(100, ge=1)):
         }
 
 
+# ==========================================================
+# START BACKGROUND CACHE ON APP STARTUP
+# ==========================================================
 @app.on_event("startup")
 def start_background_refresh():
     threading.Thread(

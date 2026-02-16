@@ -15,6 +15,7 @@ function StockPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [viewMode, setViewMode] = useState("full");
   // ===== NEW LOADING FOR LIST PAGE =====
 const [listLoading, setListLoading] = useState(false);
   const [showPredictionPanel, setShowPredictionPanel] = useState(false);
@@ -165,6 +166,13 @@ const fetchStocksByPrice = async (maxPrice) => {
     console.log("overlayData", overlayData);
   }, [overlayData]);
 
+  useEffect(() => {
+  if (company && viewMode !== "full") {
+    fetchStockData();
+  }
+}, [company]);
+
+
 
   // ======================================================
   // ================== ONLY REAL FIX ==================
@@ -182,14 +190,17 @@ if (listPage) {
       maxPrice={Number(listPage)}
       stocks={filteredStocks}
       loading={listLoading}
-      onSelect={(sym) => {
-        setCompany(sym);
-        setListPage(null);
+      onSelect={(sym, mode, selectedModel) => {
+  setCompany(sym);
+  setListPage(null);
 
-        // WAIT FOR STATE THEN FETCH
-        setTimeout(() => {
-          fetchStockData();
-        }, 200);
+  if (mode === "prediction") {
+    setViewMode("prediction");
+    setModel(selectedModel || "Linear");
+  } else {
+    setViewMode("chart");
+    setChartRange("120d");
+  }
       }}
       onBack={() => setListPage(null)}
     />
@@ -360,6 +371,49 @@ if (listPage) {
           <h2>
             {data.company} ({data.symbol})
           </h2>
+          {viewMode !== "chart" && (
+
+  <div className="stats">
+    <div className="stat-box">
+      <span>Last Close</span>
+      <b>₹{data.last_close}</b>
+    </div>
+
+    <div className="stat-box">
+      <span>{data.prediction.model}</span>
+      <b>
+        {data.prediction.expected_price !== undefined
+          ? `₹${data.prediction.expected_price}`
+          : data.prediction.volatility_percent !== undefined
+            ? `${data.prediction.volatility_percent}%`
+            : "N/A"}
+      </b>
+    </div>
+
+    {data.prediction.ensemble_price && (
+      <div className="stat-box">
+        <span>Ensemble Price</span>
+        <b>₹{data.prediction.ensemble_price}</b>
+      </div>
+    )}
+
+    {data.prediction.stop_loss && (
+      <div className="stat-box">
+        <span>Stop Loss</span>
+        <b>₹{data.prediction.stop_loss}</b>
+      </div>
+    )}
+
+    {data.prediction.target && (
+      <div className="stat-box">
+        <span>Target</span>
+        <b>₹{data.prediction.target}</b>
+      </div>
+    )}
+  </div>
+
+)}
+
 
           <div className="stats">
             <div className="stat-box">
