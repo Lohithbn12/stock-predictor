@@ -12,6 +12,10 @@ from arch import arch_model
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.arima.model import ARIMA as ARIMA_MODEL
 
+import csv
+from datetime import datetime, timedelta
+
+
 
 from xgboost import XGBRegressor
 
@@ -212,7 +216,7 @@ def walk_forward_validation(df, days=10):
 
         for i in range(200, len(df)-days, days):
 
-            train = df.iloc[:i]
+            train = df.iloc[:i].copy()
             test = df.iloc[i:i+days]
 
             train["DayIndex"] = np.arange(len(train))
@@ -310,7 +314,7 @@ def evaluate_forecast_accuracy(df, model_fn, horizon=10):
 
     for i in range(200, len(df)-horizon):
 
-        train = df.iloc[:i]
+        train = df.iloc[:i].copy()
         test  = df.iloc[i:i+horizon]
 
         try:
@@ -972,6 +976,8 @@ def get_stock_data(
 
       ens, sl, tgt, parts = get_ensemble_risk(daily_df, days)
 
+      
+
 
       prediction_result = {
         "model": "ARMA",
@@ -1275,6 +1281,14 @@ def get_stock_data(
     model.upper(),
     days
 )
+    
+    if prediction_result.get("expected_price"):
+     log_prediction(
+        symbol,
+        prediction_result["expected_price"],
+        last_close,
+        days
+    )
 
 
 
@@ -1387,10 +1401,10 @@ def refresh_stock_cache():
 
             tickers = [s + ".NS" for s in symbols]
 
-            # 🔥 Batch download (MUCH FASTER)
+            # 🔥 Batch download (60 days for trend + momentum)
             data = yf.download(
                 tickers,
-                period="2d",
+                period="90d",   # ⬅️ UPDATED (was 2d)
                 interval="1d",
                 progress=False,
                 group_by="ticker",
@@ -1414,11 +1428,42 @@ def refresh_stock_cache():
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
 
-                    price = float(df["Close"].iloc[-1])
+                    if len(df) < 20:
+                        continue
+
+                    close_today = float(df["Close"].iloc[-1])
+
+                    # ==============================
+                    # 🚀 60-DAY TREND CALCULATION
+                    # ==============================
+                    if len(df) >= 60:
+                        close_60 = float(df["Close"].iloc[-60])
+                    else:
+                        close_60 = float(df["Close"].iloc[0])
+
+                    trend_60 = (
+                        ((close_today - close_60) / close_60) * 100
+                        if close_60 != 0 else 0
+                    )
+
+                    # ==============================
+                    # 🔥 MOMENTUM SCORE
+                    # ==============================
+                    returns = df["Close"].pct_change(fill_method=None).dropna()
+
+
+                    recent_acceleration = returns.tail(10).mean() * 100
+
+                    momentum_score = (
+                        (trend_60 * 0.7) +
+                        (recent_acceleration * 0.3)
+                    )
 
                     results.append({
                         "symbol": symbol,
-                        "price": round(price, 2),
+                        "price": round(close_today, 2),
+                        "trend_60": round(trend_60, 2),
+                        "momentum_score": round(momentum_score, 2),
                         "date": str(df.index[-1].date())
                     })
 
@@ -1441,7 +1486,10 @@ def refresh_stock_cache():
 # STOCK FILTER ENDPOINT
 # ==========================================================
 @app.get("/stocks-by-price")
-def stocks_by_price(max: float = Query(100, ge=1)):
+def stocks_by_price(
+    max: float = Query(100, ge=1),
+    trend: str = Query("up")  # up or down
+):
 
     try:
         filtered = [
@@ -1449,12 +1497,29 @@ def stocks_by_price(max: float = Query(100, ge=1)):
             if s["price"] <= max
         ]
 
-        filtered = sorted(filtered, key=lambda x: x["price"])[:100]
+        # ==============================
+        # 🔥 SORT BY MOMENTUM SCORE
+        # ==============================
+        if trend == "up":
+            filtered = sorted(
+                filtered,
+                key=lambda x: x.get("momentum_score", 0),
+                reverse=True
+            )
+        elif trend == "down":
+            filtered = sorted(
+                filtered,
+                key=lambda x: x.get("momentum_score", 0)
+            )
+
+        # Limit to Top 50 only
+        filtered = filtered[:50]
 
         return {
             "stocks": filtered,
             "count": len(filtered),
-            "filter": f"Stocks under ₹{max}",
+            "trend": trend,
+            "filter": f"Top 50 {'Upward' if trend=='up' else 'Downward'} Stocks under ₹{max}",
             "latest_date": filtered[0]["date"] if filtered else None,
             "last_updated": stock_cache["last_update"]
         }
@@ -1465,6 +1530,157 @@ def stocks_by_price(max: float = Query(100, ge=1)):
             "count": 0,
             "error": str(e)
         }
+
+PREDICTION_LOG_FILE = "prediction_log.csv"
+
+# ==========================================================
+# 🔥 LOG PREDICTIONS (SAFE ADDITION)
+# ==========================================================
+def log_prediction(symbol, predicted_price, base_price, horizon):
+    try:
+        file_exists = os.path.isfile(PREDICTION_LOG_FILE)
+
+        with open(PREDICTION_LOG_FILE, mode="a", newline="") as file:
+            writer = csv.writer(file)
+
+            if not file_exists:
+                writer.writerow([
+                    "date",
+                    "symbol",
+                    "horizon",
+                    "predicted_price",
+                    "base_price"
+                ])
+
+            writer.writerow([
+                datetime.today().strftime("%Y-%m-%d"),
+                symbol,
+                horizon,
+                round(predicted_price, 2),
+                round(base_price, 2)
+            ])
+    except Exception as e:
+        print("Prediction log error:", e)
+
+
+# ==========================================================
+# 🔥 PREDICTION TRACKING TABLE ENDPOINT
+# ==========================================================
+@app.get("/prediction-table")
+def prediction_table():
+
+    if not os.path.exists(PREDICTION_LOG_FILE):
+        return {"predictions": []}
+
+    df = pd.read_csv(PREDICTION_LOG_FILE)
+
+    results = []
+
+    for _, row in df.iterrows():
+        try:
+            symbol = row["symbol"]
+            horizon = int(row["horizon"])
+            predicted = float(row["predicted_price"])
+            base_price = float(row["base_price"])
+            date = datetime.strptime(row["date"], "%Y-%m-%d")
+
+            target_date = date + timedelta(days=horizon)
+
+            # =============================
+            # PENDING CASE
+            # =============================
+            if datetime.today() < target_date:
+                results.append({
+                    "date": row["date"],
+                    "symbol": symbol,
+                    "horizon": horizon,
+                    "predicted": predicted,
+                    "actual": None,
+                    "error_percent": None,
+                    "direction": None,
+                    "status": "Pending"
+                })
+                continue
+
+            # =============================
+            # COMPLETED CASE
+            # =============================
+            hist = yf.download(
+                symbol,
+                period="15d",
+                interval="1d",
+                progress=False
+            )
+
+            if hist.empty:
+                results.append({
+                    "date": row["date"],
+                    "symbol": symbol,
+                    "horizon": horizon,
+                    "predicted": predicted,
+                    "actual": None,
+                    "error_percent": None,
+                    "direction": None,
+                    "status": "No Data"
+                })
+                continue
+
+            hist = hist.reset_index()
+            hist["Date"] = pd.to_datetime(hist["Date"]).dt.date
+
+            target_rows = hist[
+                hist["Date"] >= target_date.date()
+            ]
+
+            if target_rows.empty:
+                results.append({
+                    "date": row["date"],
+                    "symbol": symbol,
+                    "horizon": horizon,
+                    "predicted": predicted,
+                    "actual": None,
+                    "error_percent": None,
+                    "direction": None,
+                    "status": "No Data"
+                })
+                continue
+
+            actual = float(target_rows.iloc[0]["Close"])
+
+            error_pct = round(
+                abs(actual - predicted) / actual * 100,
+                2
+            )
+
+            pred_direction = predicted > base_price
+            actual_direction = actual > base_price
+
+            direction = (
+                "Correct"
+                if pred_direction == actual_direction
+                else "Wrong"
+            )
+
+            results.append({
+                "date": row["date"],
+                "symbol": symbol,
+                "horizon": horizon,
+                "predicted": predicted,
+                "actual": actual,
+                "error_percent": error_pct,
+                "direction": direction,
+                "status": "Completed"
+            })
+
+        except Exception as e:
+            print("Prediction table error:", e)
+            continue
+
+    return {
+        "total_predictions": len(results),
+        "predictions": results
+    }
+
 
 
 # ==========================================================

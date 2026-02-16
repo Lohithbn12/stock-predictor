@@ -85,6 +85,26 @@ function StockListPage({ maxPrice, stocks = [], loading = false, onSelect, onBac
             >
               <div>
                 <strong>{s?.symbol}</strong> — ₹{s?.price}
+
+                {s?.trend_60 !== undefined && (
+                  <span style={{
+                    marginLeft: "8px",
+                    color: s.trend_60 >= 0 ? "#16a34a" : "#dc2626",
+                    fontWeight: "bold"
+                  }}>
+                    {s.trend_60 >= 0 ? "🚀" : "📉"} {s.trend_60}%
+                  </span>
+                )}
+
+
+                <span style={{
+                  marginLeft: "6px",
+                  color: "#2563eb",
+                  fontWeight: "bold"
+                }}>
+                  🔥 {s?.momentum_score}
+                </span>
+
               </div>
             </div>
           ))}
