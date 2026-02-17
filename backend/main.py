@@ -1382,6 +1382,16 @@ def get_nse_symbols():
         print("Symbol fetch error:", e)
         return []
 
+import math
+
+def safe_number(x):
+    if x is None:
+        return None
+    if isinstance(x, float):
+        if math.isnan(x) or math.isinf(x):
+            return None
+    return round(float(x), 2)
+
 
 # ==========================================================
 # FAST STOCK CACHE REFRESH (BATCH DOWNLOAD)
@@ -1449,7 +1459,9 @@ def refresh_stock_cache():
                     # ==============================
                     # 🔥 MOMENTUM SCORE
                     # ==============================
-                    returns = df["Close"].pct_change(fill_method=None).dropna()
+                    returns = df["Close"].pct_change().dropna()
+                    if returns.empty:
+                       continue
 
 
                     recent_acceleration = returns.tail(10).mean() * 100
@@ -1459,11 +1471,13 @@ def refresh_stock_cache():
                         (recent_acceleration * 0.3)
                     )
 
+                    
+
                     results.append({
                         "symbol": symbol,
                         "price": round(close_today, 2),
                         "trend_60": round(trend_60, 2),
-                        "momentum_score": round(momentum_score, 2),
+                        "momentum_score": safe_number(round(momentum_score, 2)),
                         "date": str(df.index[-1].date())
                     })
 
