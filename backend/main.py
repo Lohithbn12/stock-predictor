@@ -1396,20 +1396,25 @@ def refresh_stock_cache():
             symbols = get_nse_symbols()
 
             if not symbols:
-                time.sleep(900)
+                print("No symbols fetched. Retrying in 5 mins...")
+                time.sleep(300)  # shorter retry
                 continue
 
             tickers = [s + ".NS" for s in symbols]
 
-            # 🔥 Batch download (60 days for trend + momentum)
             data = yf.download(
                 tickers,
-                period="90d",   # ⬅️ UPDATED (was 2d)
+                period="90d",
                 interval="1d",
                 progress=False,
                 group_by="ticker",
                 threads=True
             )
+
+            if data is None or len(data) == 0:
+                print("Yahoo returned empty data.")
+                time.sleep(300)
+                continue
 
             results = []
 
@@ -1433,9 +1438,6 @@ def refresh_stock_cache():
 
                     close_today = float(df["Close"].iloc[-1])
 
-                    # ==============================
-                    # 🚀 60-DAY TREND CALCULATION
-                    # ==============================
                     if len(df) >= 60:
                         close_60 = float(df["Close"].iloc[-60])
                     else:
@@ -1446,12 +1448,7 @@ def refresh_stock_cache():
                         if close_60 != 0 else 0
                     )
 
-                    # ==============================
-                    # 🔥 MOMENTUM SCORE
-                    # ==============================
                     returns = df["Close"].pct_change(fill_method=None).dropna()
-
-
                     recent_acceleration = returns.tail(10).mean() * 100
 
                     momentum_score = (
@@ -1467,19 +1464,75 @@ def refresh_stock_cache():
                         "date": str(df.index[-1].date())
                     })
 
-                except Exception:
+                except Exception as e:
+                    print("Symbol processing error:", e)
                     continue
 
-            stock_cache["data"] = results
-            stock_cache["last_update"] = time.time()
-
-            print(f"Cache updated successfully. Stocks loaded: {len(results)}")
+            if results:
+                stock_cache["data"] = results
+                stock_cache["last_update"] = time.time()
+                print(f"Cache updated successfully. Stocks loaded: {len(results)}")
+            else:
+                print("No results generated.")
 
         except Exception as e:
             print("Stock cache error:", e)
 
-        # Refresh every 15 minutes
-        time.sleep(900)
+        time.sleep(900)  # 15 mins
+
+def refresh_stock_cache_once():
+    global stock_cache
+
+    try:
+        symbols = get_nse_symbols()
+        if not symbols:
+            return
+
+        tickers = [s + ".NS" for s in symbols[:150]]
+
+        data = yf.download(
+            tickers,
+            period="60d",
+            interval="1d",
+            progress=False,
+            group_by="ticker",
+            threads=True
+        )
+
+        results = []
+
+        for symbol in symbols:
+            try:
+                ticker = symbol + ".NS"
+                if ticker not in data:
+                    continue
+
+                df = data[ticker]
+                if df is None or df.empty:
+                    continue
+
+                close_today = float(df["Close"].iloc[-1])
+
+                results.append({
+                    "symbol": symbol,
+                    "price": round(close_today, 2),
+                    "trend_60": 0,
+                    "momentum_score": 0,
+                    "date": str(df.index[-1].date())
+                })
+
+            except:
+                continue
+
+        if results:
+            stock_cache["data"] = results
+            stock_cache["last_update"] = time.time()
+            print("Manual refresh successful.")
+
+    except Exception as e:
+        print("Manual refresh error:", e)
+
+
 
 
 # ==========================================================
@@ -1488,18 +1541,19 @@ def refresh_stock_cache():
 @app.get("/stocks-by-price")
 def stocks_by_price(
     max: float = Query(100, ge=1),
-    trend: str = Query("up")  # up or down
+    trend: str = Query("up")
 ):
-
     try:
+        # 🔥 FIX — If cache empty, try refreshing immediately
+        if not stock_cache["data"]:
+            print("Cache empty. Triggering immediate refresh...")
+            refresh_stock_cache_once()
+
         filtered = [
             s for s in stock_cache["data"]
             if s["price"] <= max
         ]
 
-        # ==============================
-        # 🔥 SORT BY MOMENTUM SCORE
-        # ==============================
         if trend == "up":
             filtered = sorted(
                 filtered,
@@ -1512,7 +1566,6 @@ def stocks_by_price(
                 key=lambda x: x.get("momentum_score", 0)
             )
 
-        # Limit to Top 50 only
         filtered = filtered[:50]
 
         return {
@@ -1530,6 +1583,7 @@ def stocks_by_price(
             "count": 0,
             "error": str(e)
         }
+
 
 PREDICTION_LOG_FILE = "prediction_log.csv"
 
