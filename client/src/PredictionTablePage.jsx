@@ -5,7 +5,6 @@ const API_URL = "https://stock-predictor-0zst.onrender.com";
 function PredictionTablePage({ onBack }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
-  
 
   const fetchTable = async () => {
     setLoading(true);
