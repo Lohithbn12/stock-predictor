@@ -1341,6 +1341,8 @@ stock_cache = {
     "last_update": 0
 }
 
+cache_lock = threading.Lock()
+
 # 🔗 NSE Symbol Source
 NSE_SYMBOL_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 
@@ -1469,9 +1471,10 @@ def refresh_stock_cache():
                     continue
 
             if results:
-                stock_cache["data"] = results
-                stock_cache["last_update"] = time.time()
-                print(f"Cache updated successfully. Stocks loaded: {len(results)}")
+                with cache_lock:
+                 stock_cache["data"] = results
+                 stock_cache["last_update"] = time.time()
+                 print(f"Cache updated successfully. Stocks loaded: {len(results)}")
             else:
                 print("No results generated.")
 
@@ -1525,6 +1528,7 @@ def refresh_stock_cache_once():
                 continue
 
         if results:
+          with cache_lock:  
             stock_cache["data"] = results
             stock_cache["last_update"] = time.time()
             print("Manual refresh successful.")
