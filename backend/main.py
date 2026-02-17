@@ -1548,40 +1548,75 @@ def stocks_by_price(
     trend: str = Query("up")
 ):
     try:
-        # 🔥 FIX — If cache empty, try refreshing immediately
-        if not stock_cache["data"]:
+        with cache_lock:
+            cache_copy = list(stock_cache["data"])
+            last_updated = stock_cache["last_update"]
+
+        if not cache_copy:
             print("Cache empty. Triggering immediate refresh...")
             refresh_stock_cache_once()
+            with cache_lock:
+                cache_copy = list(stock_cache["data"])
+                last_updated = stock_cache["last_update"]
 
-        filtered = [
-            s for s in stock_cache["data"]
-            if s["price"] <= max
-        ]
+        # 🔥 FILTER SAFE
+        filtered = []
+        for s in cache_copy:
+            try:
+                price = float(s.get("price", 0))
+
+                if np.isnan(price):
+                    continue
+
+                if price <= max:
+                    filtered.append(s)
+
+            except:
+                continue
+
+        # 🔥 SORT SAFE
+        def safe_momentum(x):
+            m = x.get("momentum_score", 0)
+            if m is None or (isinstance(m, float) and np.isnan(m)):
+                return 0
+            return m
 
         if trend == "up":
             filtered = sorted(
                 filtered,
-                key=lambda x: x.get("momentum_score", 0),
+                key=safe_momentum,
                 reverse=True
             )
-        elif trend == "down":
+        else:
             filtered = sorted(
                 filtered,
-                key=lambda x: x.get("momentum_score", 0)
+                key=safe_momentum
             )
 
         filtered = filtered[:50]
 
+        # 🔥 FINAL SANITIZATION (VERY IMPORTANT)
+        clean_results = []
+        for s in filtered:
+            clean_results.append({
+                "symbol": s.get("symbol"),
+                "price": float(s.get("price", 0)) if not np.isnan(s.get("price", 0)) else 0,
+                "trend_60": float(s.get("trend_60", 0)) if not np.isnan(s.get("trend_60", 0)) else 0,
+                "momentum_score": float(s.get("momentum_score", 0)) if not np.isnan(s.get("momentum_score", 0)) else 0,
+                "date": s.get("date")
+            })
+
         return {
-            "stocks": filtered,
-            "count": len(filtered),
+            "stocks": clean_results,
+            "count": len(clean_results),
             "trend": trend,
             "filter": f"Top 50 {'Upward' if trend=='up' else 'Downward'} Stocks under ₹{max}",
-            "latest_date": filtered[0]["date"] if filtered else None,
-            "last_updated": stock_cache["last_update"]
+            "latest_date": clean_results[0]["date"] if clean_results else None,
+            "last_updated": last_updated
         }
 
     except Exception as e:
+        print("STOCK FILTER ERROR:", e)
         return {
             "stocks": [],
             "count": 0,
